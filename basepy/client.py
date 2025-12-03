@@ -119,22 +119,22 @@ class Metrics:
             self.circuit_breaker_trips += 1
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get current metrics statistics."""
         with self._lock:
             stats = {
                 'requests': dict(self.request_count),
                 'errors': dict(self.error_count),
+                'cache_hits': self.cache_hits,
+                'cache_misses': self.cache_misses,
                 'cache_hit_rate': self.cache_hits / (self.cache_hits + self.cache_misses) if (self.cache_hits + self.cache_misses) > 0 else 0,
                 'rpc_usage': dict(self.rpc_usage),
                 'circuit_breaker_trips': self.circuit_breaker_trips,
                 'avg_latencies': {}
             }
-            
             for method, latencies in self.latencies.items():
                 if latencies:
                     stats['avg_latencies'][method] = sum(latencies) / len(latencies)
-            
             return stats
+
 
 
 class CircuitBreaker:
@@ -996,7 +996,702 @@ class BaseClient:
             f"rpc='{self.get_current_rpc()}', "
             f"connected={self.is_connected()})"
         )
+    # =========================================================================
+    # BATCH & MULTICALL OPERATIONS
+    # =========================================================================
 
+    @track_performance
+    def multicall(
+        self,
+        calls: List[Dict[str, Any]],
+        block_identifier: Union[int, str] = 'latest'
+    ) -> List[Any]:
+        """Execute multiple contract calls in a single RPC request."""
+        
+        MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11"
+        
+        MULTICALL3_ABI = [{
+            "inputs": [{
+                "components": [
+                    {"name": "target", "type": "address"},
+                    {"name": "callData", "type": "bytes"}
+                ],
+                "name": "calls",
+                "type": "tuple[]"
+            }],
+            "name": "aggregate",
+            "outputs": [
+                {"name": "blockNumber", "type": "uint256"},
+                {"name": "returnData", "type": "bytes[]"}
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        }]
+        
+        if not calls:
+            return []
+        
+        encoded_calls = []
+        abi_entries = []
+        
+        for i, call in enumerate(calls):
+            try:
+                contract_address = self._validate_address(call['contract'])
+                abi = call['abi']
+                function_name = call['function']
+                args = call.get('args', [])
+                
+                # Create contract instance
+                contract = self.w3.eth.contract(address=contract_address, abi=abi)
+                
+                # ✅ FIX: Use ContractFunction to encode properly
+                contract_func = contract.functions[function_name]
+                func_instance = contract_func(*args) if args else contract_func()
+                encoded_data = func_instance._encode_transaction_data()
+                
+                encoded_calls.append((contract_address, encoded_data))
+                
+                # Store ABI for decoding
+                abi_entry = None
+                for entry in abi:
+                    if entry.get('name') == function_name and entry.get('type') == 'function':
+                        abi_entry = entry
+                        break
+                abi_entries.append(abi_entry)
+                
+            except Exception as e:
+                raise ValidationError(f"Invalid call at index {i}: {str(e)}")
+        
+        # Execute multicall
+        def _execute_multicall():
+            try:
+                multicall_contract = self.w3.eth.contract(
+                    address=MULTICALL3_ADDRESS,
+                    abi=MULTICALL3_ABI
+                )
+                
+                _, return_data = self._rpc_call(
+                    lambda: multicall_contract.functions.aggregate(encoded_calls).call(
+                        block_identifier=block_identifier
+                    )
+                )
+                
+                # Decode results
+                results = []
+                for i, (abi_entry, data) in enumerate(zip(abi_entries, return_data)):
+                    try:
+                        if not abi_entry:
+                            results.append(data)
+                            continue
+                        
+                        output_types = [output['type'] for output in abi_entry.get('outputs', [])]
+                        
+                        if len(output_types) == 0:
+                            results.append(None)
+                        elif len(output_types) == 1:
+                            decoded = self.w3.codec.decode(output_types, data)
+                            results.append(decoded[0])
+                        else:
+                            decoded = self.w3.codec.decode(output_types, data)
+                            results.append(decoded)
+                            
+                    except Exception as e:
+                        logger.warning(f"Failed to decode result {i}: {e}")
+                        results.append(data)
+                
+                return results
+                
+            except Exception as e:
+                logger.error(f"Multicall failed: {e}")
+                raise RPCError(f"Multicall execution failed: {str(e)}") from e
+        
+        return _execute_multicall()
+
+
+    
+    @track_performance
+    def batch_get_balances(
+        self,
+        addresses: List[str]
+    ) -> Dict[str, int]:
+        """
+        Get ETH balances for multiple addresses efficiently.
+        
+        Args:
+            addresses: List of Ethereum addresses
+            
+        Returns:
+            Dictionary mapping address to balance in Wei
+            
+        Example:
+            >>> addresses = ['0x123...', '0x456...']
+            >>> balances = client.batch_get_balances(addresses)
+            >>> for addr, bal in balances.items():
+            ...     print(f"{addr}: {bal / 10**18} ETH")
+        """
+        if not addresses:
+            return {}
+        
+        # Validate addresses
+        validated = [self._validate_address(addr) for addr in addresses]
+        
+        def _get_balances():
+            balances = {}
+            
+            # Try batch request, but fallback gracefully if not supported
+            try:
+                # Batch RPC requests
+                batch_requests = [
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "eth_getBalance",
+                        "params": [addr, "latest"],
+                        "id": i
+                    }
+                    for i, addr in enumerate(validated)
+                ]
+                
+                # Make batch request
+                response = self._rpc_call(
+                    lambda: self.w3.provider.make_request("batch", batch_requests)
+                )
+                
+                # Parse responses
+                for i, addr in enumerate(validated):
+                    if isinstance(response, list) and i < len(response):
+                        result = response[i].get('result')
+                        if result:
+                            balances[addr] = int(result, 16)
+                        else:
+                            balances[addr] = 0
+                    else:
+                        # Fallback to individual calls
+                        balances[addr] = self.get_balance(addr)
+                        
+            except Exception as e:
+                # 403 or other batch errors - fallback to individual calls
+                logger.info(f"Batch request not supported, using individual calls: {e}")
+                for addr in validated:
+                    try:
+                        balances[addr] = self.get_balance(addr)
+                    except Exception as err:
+                        logger.error(f"Failed to get balance for {addr}: {err}")
+                        balances[addr] = 0
+            
+            return balances
+        
+        return self._cached_call('batch_get_balances', _get_balances, *validated)
+
+
+    @track_performance
+    def batch_get_token_balances(
+        self,
+        address: str,
+        token_contracts: List[str]
+    ) -> Dict[str, int]:
+        """
+        Get ERC-20 token balances for multiple tokens efficiently.
+        
+        Args:
+            address: Wallet address
+            token_contracts: List of ERC-20 token contract addresses
+            
+        Returns:
+            Dictionary mapping token address to balance
+            
+        Example:
+            >>> tokens = ['0xUSDC...', '0xDAI...']
+            >>> balances = client.batch_get_token_balances('0x123...', tokens)
+            >>> for token, balance in balances.items():
+            ...     print(f"{token}: {balance}")
+        """
+        from .abis import ERC20_ABI
+        
+        if not token_contracts:
+            return {}
+        
+        wallet = self._validate_address(address)
+        
+        # Build multicall
+        calls = []
+        for token in token_contracts:
+            calls.append({
+                'contract': token,
+                'abi': ERC20_ABI,
+                'function': 'balanceOf',
+                'args': [wallet]
+            })
+        
+        try:
+            results = self.multicall(calls)
+            
+            balances = {}
+            for i, token in enumerate(token_contracts):
+                balances[self._validate_address(token)] = results[i] if i < len(results) else 0
+            
+            return balances
+            
+        except Exception as e:
+            logger.error(f"Batch token balance failed: {e}")
+            raise RPCError(f"Failed to get token balances: {str(e)}") from e
+    # =========================================================================
+# TOKEN OPERATIONS (ERC-20 ENHANCED)
+# =========================================================================
+
+    @track_performance
+    def get_token_metadata(
+        self,
+        contract_address: str
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive ERC-20 token metadata.
+        
+        Args:
+            contract_address: Token contract address
+            
+        Returns:
+            Dictionary with token information:
+                - name: Token name
+                - symbol: Token symbol
+                - decimals: Token decimals
+                - totalSupply: Total supply
+                - address: Contract address (checksummed)
+                
+        Example:
+            >>> metadata = client.get_token_metadata('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913')
+            >>> print(f"{metadata['name']} ({metadata['symbol']})")
+            >>> print(f"Decimals: {metadata['decimals']}")
+        """
+        from .abis import ERC20_ABI
+        
+        address = self._validate_address(contract_address)
+        
+        def _get_metadata():
+            try:
+                calls = [
+                    {'contract': address, 'abi': ERC20_ABI, 'function': 'name'},
+                    {'contract': address, 'abi': ERC20_ABI, 'function': 'symbol'},
+                    {'contract': address, 'abi': ERC20_ABI, 'function': 'decimals'},
+                    {'contract': address, 'abi': ERC20_ABI, 'function': 'totalSupply'},
+                ]
+                
+                results = self.multicall(calls)
+                
+                return {
+                    'address': address,
+                    'name': results[0],
+                    'symbol': results[1],
+                    'decimals': results[2],
+                    'totalSupply': results[3],
+                }
+                
+            except Exception as e:
+                logger.error(f"Failed to get token metadata: {e}")
+                raise RPCError(f"Token metadata retrieval failed: {str(e)}") from e
+        
+        return self._cached_call('get_token_metadata', _get_metadata, address)
+
+
+    @track_performance
+    def get_token_balances(
+        self,
+        address: str,
+        token_addresses: Optional[List[str]] = None
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all ERC-20 token balances for a wallet with metadata.
+        
+        Args:
+            address: Wallet address
+            token_addresses: Optional list of specific tokens (uses common Base tokens if None)
+            
+        Returns:
+            Dictionary mapping token address to balance info:
+                - balance: Raw balance
+                - decimals: Token decimals
+                - symbol: Token symbol
+                - balanceFormatted: Human-readable balance
+                
+        Example:
+            >>> balances = client.get_token_balances('0x123...')
+            >>> for token, info in balances.items():
+            ...     print(f"{info['symbol']}: {info['balanceFormatted']}")
+        """
+        from .abis import BASE_CONTRACTS, ERC20_ABI
+        
+        wallet = self._validate_address(address)
+        
+        # Use common Base tokens if not specified
+        if token_addresses is None:
+            network = 'mainnet' if self.chain_id == 8453 else 'sepolia'
+            token_addresses = [
+                BASE_CONTRACTS[network].get('usdc'),
+                BASE_CONTRACTS[network].get('dai'),
+            ]
+            token_addresses = [t for t in token_addresses if t]  # Filter None
+        
+        if not token_addresses:
+            return {}
+        
+        # Get balances and metadata
+        calls = []
+        for token in token_addresses:
+            calls.extend([
+                {'contract': token, 'abi': ERC20_ABI, 'function': 'balanceOf', 'args': [wallet]},
+                {'contract': token, 'abi': ERC20_ABI, 'function': 'symbol'},
+                {'contract': token, 'abi': ERC20_ABI, 'function': 'decimals'},
+            ])
+        
+        try:
+            results = self.multicall(calls)
+            
+            balances = {}
+            for i, token in enumerate(token_addresses):
+                idx = i * 3
+                if idx + 2 < len(results):
+                    balance = results[idx]
+                    symbol = results[idx + 1]
+                    decimals = results[idx + 2]
+                    
+                    validated_token = self._validate_address(token)
+                    balances[validated_token] = {
+                        'balance': balance,
+                        'symbol': symbol,
+                        'decimals': decimals,
+                        'balanceFormatted': balance / (10 ** decimals) if decimals > 0 else balance
+                    }
+            
+            return balances
+            
+        except Exception as e:
+            logger.error(f"Failed to get token balances: {e}")
+            raise RPCError(f"Token balance retrieval failed: {str(e)}") from e
+
+
+    @track_performance
+    def get_token_allowance(
+        self,
+        token_address: str,
+        owner: str,
+        spender: str
+    ) -> int:
+        """
+        Check ERC-20 token allowance.
+        
+        Args:
+            token_address: Token contract address
+            owner: Token owner address
+            spender: Spender address
+            
+        Returns:
+            Allowance amount in token's smallest unit
+            
+        Example:
+            >>> allowance = client.get_token_allowance(
+            ...     '0xUSDC...',
+            ...     '0xowner...',
+            ...     '0xspender...'
+            ... )
+            >>> print(f"Allowance: {allowance / 10**6} USDC")
+        """
+        from .abis import ERC20_ABI
+        
+        token = self._validate_address(token_address)
+        owner_addr = self._validate_address(owner)
+        spender_addr = self._validate_address(spender)
+        
+        def _get_allowance():
+            try:
+                contract = self.w3.eth.contract(address=token, abi=ERC20_ABI)
+                return self._rpc_call(
+                    lambda: contract.functions.allowance(owner_addr, spender_addr).call()
+                )
+            except Exception as e:
+                logger.error(f"Failed to get allowance: {e}")
+                raise RPCError(f"Allowance check failed: {str(e)}") from e
+        
+        return self._cached_call('get_token_allowance', _get_allowance, token, owner_addr, spender_addr)
+    # =========================================================================
+    # BASE L2-SPECIFIC FEATURES
+    # =========================================================================
+
+    @track_performance
+    def estimate_total_fee(
+        self,
+        transaction: Dict[str, Any]
+    ) -> Dict[str, int]:
+        """
+        Estimate TOTAL transaction cost on Base (L1 + L2 fees).
+        
+        This is critical for Base! Unlike Ethereum, Base has two fee components:
+        - L2 execution fee (like normal Ethereum)
+        - L1 data availability fee (for posting to Ethereum mainnet)
+        
+        Args:
+            transaction: Transaction dict with 'to', 'from', 'value', 'data'
+            
+        Returns:
+            Dictionary with:
+                - l2_gas: L2 gas estimate
+                - l2_gas_price: L2 gas price in Wei
+                - l2_fee: L2 execution cost in Wei
+                - l1_fee: L1 data cost in Wei
+                - total_fee: Combined cost in Wei
+                - total_fee_eth: Total cost in ETH
+                
+        Example:
+            >>> tx = {
+            ...     'to': '0x...',
+            ...     'from': '0x...',
+            ...     'value': 10**18,
+            ...     'data': '0x'
+            ... }
+            >>> cost = client.estimate_total_fee(tx)
+            >>> print(f"Total cost: {cost['total_fee_eth']:.6f} ETH")
+            >>> print(f"  L2 fee: {cost['l2_fee'] / 10**18:.6f} ETH")
+            >>> print(f"  L1 fee: {cost['l1_fee'] / 10**18:.6f} ETH")
+        """
+        # Validate transaction
+        if 'to' not in transaction:
+            raise ValidationError("Transaction must have 'to' field")
+        
+        # FIX: Better validation - handle both string and address types
+        to_addr = transaction['to']
+        if isinstance(to_addr, str) and len(to_addr.strip()) > 0:
+            transaction['to'] = self._validate_address(to_addr)
+        else:
+            raise ValidationError(f"Invalid 'to' address: {to_addr}")
+        
+        if 'from' in transaction:
+            from_addr = transaction['from']
+            if isinstance(from_addr, str) and len(from_addr.strip()) > 0:
+                transaction['from'] = self._validate_address(from_addr)
+        
+        def _estimate_total():
+            try:
+                # Get L2 gas estimate
+                l2_gas = self._rpc_call(lambda: self.w3.eth.estimate_gas(transaction))
+                
+                # Get L2 gas price
+                l2_gas_price = self.get_gas_price()
+                
+                # Calculate L2 fee
+                l2_fee = l2_gas * l2_gas_price
+                
+                # Get L1 data fee
+                tx_data = transaction.get('data', '0x')
+                if not tx_data:
+                    tx_data = '0x'
+                l1_fee = self.get_l1_fee(tx_data)
+                
+                # Total cost
+                total_fee = l2_fee + l1_fee
+                
+                return {
+                    'l2_gas': l2_gas,
+                    'l2_gas_price': l2_gas_price,
+                    'l2_fee': l2_fee,
+                    'l1_fee': l1_fee,
+                    'total_fee': total_fee,
+                    'total_fee_eth': total_fee / 10**18,
+                    'l2_fee_eth': l2_fee / 10**18,
+                    'l1_fee_eth': l1_fee / 10**18,
+                }
+                
+            except Exception as e:
+                logger.error(f"Fee estimation failed: {e}")
+                raise RPCError(f"Total fee estimation failed: {str(e)}") from e
+        
+        return _estimate_total()
+
+
+    @track_performance
+    def get_l1_gas_oracle_prices(self) -> Dict[str, Any]:
+        """
+        Get current L1 gas pricing information from Base's oracle.
+        
+        Returns:
+            Dictionary with:
+                - l1_base_fee: L1 base fee in Wei
+                - base_fee_scalar: Base fee scalar (post-Ecotone)
+                - blob_base_fee_scalar: Blob base fee scalar (post-Ecotone)
+                - decimals: Scalar decimals
+                
+        Example:
+            >>> prices = client.get_l1_gas_oracle_prices()
+            >>> print(f"L1 Base Fee: {prices['l1_base_fee'] / 10**9} Gwei")
+        """
+        oracle_address = Web3.to_checksum_address(
+            "0x420000000000000000000000000000000000000F"
+        )
+        
+        def _get_oracle_prices():
+            try:
+                # Updated ABI for post-Ecotone Base
+                ORACLE_ABI = [
+                    {"inputs": [], "name": "l1BaseFee", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"},
+                    {"inputs": [], "name": "baseFeeScalar", "outputs": [{"type": "uint32"}], "stateMutability": "view", "type": "function"},
+                    {"inputs": [], "name": "blobBaseFeeScalar", "outputs": [{"type": "uint32"}], "stateMutability": "view", "type": "function"},
+                    {"inputs": [], "name": "decimals", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"},
+                ]
+                
+                calls = [
+                    {'contract': oracle_address, 'abi': ORACLE_ABI, 'function': 'l1BaseFee'},
+                    {'contract': oracle_address, 'abi': ORACLE_ABI, 'function': 'baseFeeScalar'},
+                    {'contract': oracle_address, 'abi': ORACLE_ABI, 'function': 'blobBaseFeeScalar'},
+                    {'contract': oracle_address, 'abi': ORACLE_ABI, 'function': 'decimals'},
+                ]
+                
+                results = self.multicall(calls)
+                
+                return {
+                    'l1_base_fee': results[0],
+                    'base_fee_scalar': results[1],
+                    'blob_base_fee_scalar': results[2],
+                    'decimals': results[3],
+                }
+                
+            except Exception as e:
+                logger.warning(f"Failed to get L1 oracle prices: {e}")
+                # Return defaults if oracle call fails
+                return {
+                    'l1_base_fee': 0,
+                    'base_fee_scalar': 0,
+                    'blob_base_fee_scalar': 0,
+                    'decimals': 6,
+                }
+        
+        return self._cached_call('get_l1_gas_oracle_prices', _get_oracle_prices)
+    # =========================================================================
+    # DEVELOPER UTILITIES
+    # =========================================================================
+
+    def format_units(self, value: int, decimals: int = 18) -> float:
+        """
+        Convert Wei/smallest unit to human-readable decimal.
+        
+        Args:
+            value: Value in smallest unit
+            decimals: Number of decimals (18 for ETH, 6 for USDC, etc.)
+            
+        Returns:
+            Human-readable float value
+            
+        Example:
+            >>> wei = 1500000000000000000
+            >>> eth = client.format_units(wei, 18)
+            >>> print(f"{eth} ETH")  # 1.5 ETH
+            >>> 
+            >>> usdc_raw = 1500000
+            >>> usdc = client.format_units(usdc_raw, 6)
+            >>> print(f"{usdc} USDC")  # 1.5 USDC
+        """
+        return value / (10 ** decimals)
+
+
+    def parse_units(self, value: Union[str, float, int], decimals: int = 18) -> int:
+        """
+        Convert human-readable decimal to Wei/smallest unit.
+        
+        Args:
+            value: Human-readable value
+            decimals: Number of decimals
+            
+        Returns:
+            Value in smallest unit (integer)
+            
+        Example:
+            >>> eth = client.parse_units("1.5", 18)
+            >>> print(eth)  # 1500000000000000000
+            >>> 
+            >>> usdc = client.parse_units(1.5, 6)
+            >>> print(usdc)  # 1500000
+        """
+        from decimal import Decimal
+        
+        if isinstance(value, int):
+            value = str(value)
+        
+        decimal_value = Decimal(str(value))
+        return int(decimal_value * (10 ** decimals))
+
+
+    @track_performance
+    def decode_function_input(
+        self,
+        transaction_input: str,
+        abi: List[Dict]
+    ) -> Dict[str, Any]:
+        """
+        Decode transaction input data using ABI.
+        
+        Args:
+            transaction_input: Transaction data (0x...)
+            abi: Contract ABI
+            
+        Returns:
+            Dictionary with:
+                - function: Function name
+                - inputs: Function arguments
+                
+        Example:
+            >>> tx = client.w3.eth.get_transaction('0x...')
+            >>> decoded = client.decode_function_input(tx['input'], ERC20_ABI)
+            >>> print(f"Function: {decoded['function']}")
+            >>> print(f"Args: {decoded['inputs']}")
+        """
+        try:
+            contract = self.w3.eth.contract(abi=abi)
+            func_obj, func_params = contract.decode_function_input(transaction_input)
+            
+            return {
+                'function': func_obj.fn_name,
+                'inputs': dict(func_params)
+            }
+        except Exception as e:
+            logger.error(f"Failed to decode input: {e}")
+            raise ValidationError(f"Input decoding failed: {str(e)}") from e
+
+
+    @track_performance
+    def simulate_transaction(
+        self,
+        transaction: Dict[str, Any],
+        block_identifier: Union[int, str] = 'latest'
+    ) -> Any:
+        """
+        Simulate transaction execution without sending it.
+        
+        This uses eth_call to test what would happen if the transaction
+        was executed. Useful for testing before sending.
+        
+        Args:
+            transaction: Transaction dict
+            block_identifier: Block to simulate at
+            
+        Returns:
+            Return value from the simulated call
+            
+        Example:
+            >>> tx = {
+            ...     'to': '0xcontract...',
+            ...     'from': '0xwallet...',
+            ...     'data': '0x...'
+            ... }
+            >>> result = client.simulate_transaction(tx)
+            >>> print(f"Simulation result: {result}")
+        """
+        try:
+            return self._rpc_call(
+                lambda: self.w3.eth.call(transaction, block_identifier)
+            )
+        except Exception as e:
+            # Extract revert reason if available
+            error_msg = str(e)
+            if "execution reverted" in error_msg.lower():
+                logger.error(f"Transaction would revert: {error_msg}")
+                raise ValidationError(f"Transaction simulation failed: {error_msg}")
+            raise RPCError(f"Simulation failed: {str(e)}") from e
 
 # ============================================================================
 # PRODUCTION ENHANCEMENTS SUMMARY
