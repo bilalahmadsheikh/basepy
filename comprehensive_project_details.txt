@@ -1,0 +1,76 @@
+BasePy SDK - Comprehensive Project Documentation
+================================================
+
+1. Project Mission & Impact
+---------------------------
+**Mission:** To make the Base blockchain the most accessible Layer 2 network for Python developers.
+**Impact:** 
+- **Ecosystem Expansion:** Opens Base to the Python community (AI, Data Science, Backend).
+- **Developer Experience:** Reduces setup time from hours to minutes.
+- **Standardization:** Provides a secure, standard way to interact with Base.
+
+2. Base Integration Specifics
+-----------------------------
+This project is not generic; it is tailored for Base:
+- **Chain Identity:** Hardcoded Chain IDs for Mainnet (8453) and Sepolia (84532).
+- **Network Access:** Pre-configured RPC URLs (e.g., `https://mainnet.base.org`).
+- **Gas Logic:** (Future Phase) Optimized gas estimation for L2 rollups.
+
+3. Detailed Feature Breakdown
+-----------------------------
+
+### A. Core Connectivity (`basepy/client.py`)
+The heart of the SDK.
+- **`BaseClient` Class:** The main entry point.
+- **Auto-Connection:** Automatically cycles through a list of known, public Base RPC nodes until it finds a working one.
+- **Network Awareness:** Knows the difference between Mainnet and Testnet instantly.
+- **Methods:**
+  - `get_chain_id()`: Verifies you are on the right network.
+  - `get_block_number()`: Checks the latest sync status.
+  - `get_balance(address)`: Checks native ETH balance.
+
+### B. Wallet & Security (`basepy/wallet.py`)
+Secure key management.
+- **`Wallet` Class:** Represents a user's identity.
+- **Creation:** `Wallet.create()` generates a brand new, cryptographically secure private key.
+- **Importing:** 
+  - `from_private_key()`: Load existing keys.
+  - `from_mnemonic()`: Load from a 12/24 word seed phrase (BIP-39).
+- **Signing:** Securely signs transactions locally (offline) before broadcasting, ensuring private keys never leave the device.
+
+### C. Transaction Engine (`basepy/transactions.py`)
+Simplified value transfer.
+- **`Transactions` Class:** Handles the complexity of moving assets.
+- **Native ETH:** `send_eth()` handles value conversion (Ether -> Wei), gas price fetching, nonce calculation, signing, and broadcasting in one step.
+- **ERC-20 Tokens:** `send_erc20()` abstracts the complexity of token contracts. You just need the token address and amount; the SDK handles the ABI and function calls.
+
+### D. Smart Contract Interface (`basepy/contracts.py`)
+Interaction with decentralized applications.
+- **`Contract` Class:** A wrapper for any deployed code on Base.
+- **Read Operations:** `call()` allows fetching data (prices, balances, state) without paying gas.
+- **Write Operations:** `transact()` allows changing state (swapping, voting, minting). It automatically estimates the required gas and manages the transaction lifecycle.
+
+### E. Standard Wrappers (`basepy/standards.py`) [NEW]
+Plug-and-play token interaction.
+- **`ERC20` Class:** A ready-to-use wrapper for any ERC-20 token (USDC, WETH, DEGEN).
+- **Built-in ABI:** The SDK includes the standard interface, so you don't need to copy-paste JSON files.
+- **Methods:** `balance_of(address)`, `transfer(to, amount)`, `approve(spender, amount)`.
+
+### F. Advanced Gas Logic (`basepy/client.py`) [NEW]
+Optimized for Layer 2.
+- **L1 Fee Calculation:** Base transactions pay a tiny fee to Ethereum (L1) for security.
+- **`get_l1_fee(data)`:** Queries the Base Gas Price Oracle (Predeploy 0x4200...0F) to calculate this fee accurately.
+- **Benefit:** Prevents under-priced transactions and provides users with accurate cost estimates.
+
+### G. Utilities & Constants (`basepy/utils.py`)
+The "Base DNA".
+- **Constants:** Stores the critical configuration data for Base.
+- **Helpers:** `to_wei`, `from_wei`, `is_address` make handling blockchain data types (which can be tricky in Python) straightforward.
+- **Exceptions:** Custom error handling (`ConnectionError`, `WalletError`) to give developers clear feedback when things go wrong.
+
+4. Why This "Improves" Base
+---------------------------
+A blockchain is a platform. Like an operating system, it needs good apps. Good apps need developers. Developers need good tools.
+- **Before BasePy:** Python devs had to build their own tools from scratch to use Base.
+- **After BasePy:** Python devs have a "standard library" for Base.
+- **Result:** This accelerates the adoption of Base by removing friction for a massive demographic of developers.

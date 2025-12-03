@@ -1,0 +1,44 @@
+HOW TO BUILD AND RUN BASEPY SDK
+===============================
+
+1. PREREQUISITES
+----------------
+Ensure you have Python 3.8 or higher installed.
+Check version:
+    python --version
+
+2. SETUP & INSTALLATION
+-----------------------
+Navigate to the project directory:
+    cd basepy-sdk
+
+Install the required dependencies:
+    pip install -r requirements.txt
+
+(Optional) Install the package in editable mode for development:
+    pip install -e .
+
+3. RUNNING EXAMPLES
+-------------------
+Run the basic connection test:
+    python examples/basic_connection.py
+
+Run the new features demo (L2 Gas & ERC-20 Wrappers):
+    python examples/new_features_demo.py
+
+4. RUNNING TESTS
+----------------
+Execute the unit test suite to verify everything is working:
+    python -m unittest discover tests
+
+5. BUILDING THE PACKAGE (FOR DISTRIBUTION)
+------------------------------------------
+If you want to build a wheel/distribution file:
+
+Install the build tool:
+    pip install build
+
+Build the package:
+    python -m build
+
+(This will create .tar.gz and .whl files in the 'dist/' directory)

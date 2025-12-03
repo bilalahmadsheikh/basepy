@@ -1,0 +1,53 @@
+BasePy SDK - Project Overview & Features
+======================================
+
+Overview
+--------
+BasePy is a specialized Python SDK designed to interact with the Base blockchain (an L2 on Ethereum). It simplifies the process of connecting to Base, managing wallets, sending transactions, and interacting with smart contracts by providing a high-level, Pythonic interface over standard web3 libraries.
+
+Detailed Features
+-----------------
+
+1. Base Connection & Client (basepy.client)
+   - Automatically connects to Base Mainnet or Sepolia Testnet without manual RPC configuration.
+   - Includes built-in RPC failover to ensure reliable connections.
+   - Provides easy access to chain data like Block Number, Chain ID, and Balances.
+
+2. Wallet Management (basepy.wallet)
+   - Generates new Base-compatible wallets (Ethereum style).
+   - Imports wallets via Private Key or Mnemonic phrase.
+   - Securely signs transactions locally.
+
+3. Transactions (basepy.transactions)
+   - Simplifies sending ETH (native token) and ERC-20 tokens.
+   - Handles gas estimation and nonce management automatically.
+   - Returns transaction hashes for easy tracking.
+
+4. Smart Contracts (basepy.contracts)
+   - Loads contracts using Address and ABI.
+   - Executes read-only calls (view/pure functions).
+   - Executes write transactions (state-changing functions) with automatic signing.
+
+5. Standard Wrappers (basepy.standards) [NEW]
+   - Pre-built wrappers for common standards like ERC-20.
+   - No need to find or paste ABIs manually.
+   - Methods: `transfer`, `approve`, `balance_of`, `get_symbol`.
+
+6. Advanced Gas Logic (basepy.client) [NEW]
+   - Integrated support for the OP Stack Gas Price Oracle.
+   - `get_l1_fee(data)`: Calculates the Layer 1 security fee required for Base transactions.
+   - Ensures accurate cost estimation for L2 operations.
+
+7. Utilities (basepy.utils)
+   - Helper functions for Wei conversion (to/from ETH).
+   - Address validation and checksumming.
+   - Pre-configured constants for Base Chain IDs and RPC URLs.
+
+Where Base Comes In
+-------------------
+This SDK is explicitly pre-configured for the **Base Blockchain**.
+
+1. Network Defaults: It defaults to Base Mainnet (Chain ID 8453) and Base Sepolia (Chain ID 84532).
+2. RPC Endpoints: It comes hardcoded with public RPC endpoints for Base.
+3. L2 Specifics: It includes the specific logic to talk to the Base Gas Oracle (0x4200...0F) to calculate L1 data fees, which is unique to OP Stack chains like Base.
+4. Compatibility: It ensures all transactions and signatures are formatted correctly for the Base network.
