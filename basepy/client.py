@@ -16,7 +16,7 @@ import json
 
 from .utils import (
     BASE_MAINNET_RPC_URLS, 
-    BASE_SEPOLIA_RPC_URLS, 
+    BASE_SEPOLIA_RPC_URLS,
     BASE_MAINNET_CHAIN_ID, 
     BASE_SEPOLIA_CHAIN_ID
 )
@@ -744,6 +744,7 @@ class BaseClient:
         
         return self._cached_call('get_balance', _get_balance, checksum_address)
 
+    
     @track_performance
     def get_transaction_count(
         self, 
@@ -781,6 +782,7 @@ class BaseClient:
         
         return self._cached_call('get_transaction_count', _get_tx_count, checksum_address, block_identifier)
 
+    
     @track_performance
     def get_code(self, address: str) -> bytes:
         """
@@ -1692,6 +1694,333 @@ class BaseClient:
                 logger.error(f"Transaction would revert: {error_msg}")
                 raise ValidationError(f"Transaction simulation failed: {error_msg}")
             raise RPCError(f"Simulation failed: {str(e)}") from e
+    """
+
+
+Add this method to the BaseClient class, in the TOKEN OPERATIONS section
+(after get_token_allowance method, around line 900).
+"""
+
+    @track_performance
+    def get_portfolio_balance(
+        self,
+        address: str,
+        token_addresses: Optional[List[str]] = None,
+        include_common_tokens: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Get complete portfolio balance (ETH + ERC-20 tokens) for a wallet.
+        
+        This method efficiently retrieves all balances in ~2 RPC calls:
+        - 1 RPC call for ETH balance
+        - 1 multicall for all token balances + metadata
+        
+        Args:
+            address: Wallet address to check
+            token_addresses: Optional list of specific token addresses to check
+            include_common_tokens: If True and token_addresses is None, includes Base common tokens
+            
+        Returns:
+            Dictionary with complete portfolio information:
+                - address: Checksummed wallet address
+                - eth: {
+                    balance: Raw balance in Wei,
+                    balance_formatted: Human-readable ETH amount
+                  }
+                - tokens: {
+                    '0xTokenAddress...': {
+                        symbol: Token symbol,
+                        name: Token name,
+                        balance: Raw balance,
+                        decimals: Token decimals,
+                        balance_formatted: Human-readable amount
+                    }
+                  }
+                - total_assets: Total number of assets (including ETH)
+                - non_zero_tokens: Number of tokens with non-zero balance
+                
+        Raises:
+            ValidationError: If address is invalid
+            RPCError: If RPC calls fail
+            
+        Example:
+            >>> # Get full portfolio with common Base tokens
+            >>> portfolio = client.get_portfolio_balance('0x123...')
+            >>> print(f"ETH: {portfolio['eth']['balance_formatted']}")
+            >>> for token_addr, info in portfolio['tokens'].items():
+            ...     if info['balance'] > 0:
+            ...         print(f"{info['symbol']}: {info['balance_formatted']}")
+            >>> 
+            >>> # Get specific tokens only
+            >>> usdc_dai = ['0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb']
+            >>> portfolio = client.get_portfolio_balance('0x123...', token_addresses=usdc_dai)
+            >>> 
+            >>> # Portfolio summary
+            >>> print(f"Total assets: {portfolio['total_assets']}")
+            >>> print(f"Tokens with balance: {portfolio['non_zero_tokens']}")
+        """
+        from .abis import get_common_tokens, get_token_addresses, ERC20_ABI
+        from .utils import format_token_amount
+        
+        # Validate wallet address
+        wallet = self._validate_address(address)
+        
+        # Determine which tokens to check
+        if token_addresses is None and include_common_tokens:
+            # Use common Base tokens
+            network = 'mainnet' if self.chain_id == BASE_MAINNET_CHAIN_ID else 'sepolia'
+            common_tokens = get_common_tokens(self.chain_id)
+            token_addresses = get_token_addresses(self.chain_id)
+        elif token_addresses is None:
+            token_addresses = []
+        
+        # Validate all token addresses
+        validated_tokens = [self._validate_address(t) for t in token_addresses] if token_addresses else []
+        
+        def _get_portfolio():
+            try:
+                # Step 1: Get ETH balance (1 RPC call)
+                eth_balance = self.get_balance(wallet)
+                
+                # Step 2: Get all token data in one multicall (1 RPC call)
+                token_data = {}
+                
+                if validated_tokens:
+                    # Build multicall for balance + metadata for each token
+                    calls = []
+                    for token in validated_tokens:
+                        calls.extend([
+                            {'contract': token, 'abi': ERC20_ABI, 'function': 'balanceOf', 'args': [wallet]},
+                            {'contract': token, 'abi': ERC20_ABI, 'function': 'symbol'},
+                            {'contract': token, 'abi': ERC20_ABI, 'function': 'name'},
+                            {'contract': token, 'abi': ERC20_ABI, 'function': 'decimals'},
+                        ])
+                    
+                    # Execute multicall
+                    results = self.multicall(calls)
+                    
+                    # Parse results
+                    non_zero_count = 0
+                    for i, token in enumerate(validated_tokens):
+                        idx = i * 4
+                        if idx + 3 < len(results):
+                            balance = results[idx]
+                            symbol = results[idx + 1]
+                            name = results[idx + 2]
+                            decimals = results[idx + 3]
+                            
+                            # Format balance
+                            balance_formatted = format_token_amount(balance, decimals)
+                            
+                            if balance > 0:
+                                non_zero_count += 1
+                            
+                            token_data[token] = {
+                                'symbol': symbol,
+                                'name': name,
+                                'balance': balance,
+                                'decimals': decimals,
+                                'balance_formatted': balance_formatted
+                            }
+                
+                # Build portfolio response
+                portfolio = {
+                    'address': wallet,
+                    'eth': {
+                        'balance': eth_balance,
+                        'balance_formatted': format_token_amount(eth_balance, 18)  # ETH has 18 decimals
+                    },
+                    'tokens': token_data,
+                    'total_assets': 1 + len(token_data),  # ETH + tokens
+                    'non_zero_tokens': sum(1 for t in token_data.values() if t['balance'] > 0)
+                }
+                
+                return portfolio
+                
+            except Exception as e:
+                logger.error(f"Failed to get portfolio balance: {e}")
+                raise RPCError(f"Portfolio balance retrieval failed: {str(e)}") from e
+        
+        return _get_portfolio()
+
+
+    @track_performance
+    def get_portfolio_value(
+        self,
+        address: str,
+        token_addresses: Optional[List[str]] = None,
+        include_common_tokens: bool = True,
+        eth_price_usd: Optional[float] = None,
+        token_prices_usd: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
+        """
+        Get portfolio balance with USD valuation (if prices provided).
+        
+        Note: This method does NOT fetch prices automatically. You must provide
+        prices from an external price oracle or API (e.g., CoinGecko, Chainlink).
+        
+        Args:
+            address: Wallet address
+            token_addresses: Optional token addresses to check
+            include_common_tokens: Include Base common tokens if no specific tokens provided
+            eth_price_usd: ETH price in USD (optional)
+            token_prices_usd: Dict mapping token address to USD price (optional)
+            
+        Returns:
+            Dictionary with portfolio value information:
+                - portfolio: Full portfolio data from get_portfolio_balance()
+                - eth_value_usd: ETH value in USD (if price provided)
+                - token_values_usd: Dict of token USD values (if prices provided)
+                - total_value_usd: Total portfolio value in USD (if prices provided)
+                
+        Example:
+            >>> # Without prices (just balances)
+            >>> portfolio = client.get_portfolio_value('0x123...')
+            >>> 
+            >>> # With prices (calculate USD value)
+            >>> portfolio = client.get_portfolio_value(
+            ...     '0x123...',
+            ...     eth_price_usd=3000.0,
+            ...     token_prices_usd={
+            ...         '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913': 1.0,  # USDC
+            ...         '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb': 1.0,  # DAI
+            ...     }
+            ... )
+            >>> print(f"Total Value: ${portfolio['total_value_usd']:.2f}")
+        """
+        # Get portfolio balances
+        portfolio = self.get_portfolio_balance(
+            address=address,
+            token_addresses=token_addresses,
+            include_common_tokens=include_common_tokens
+        )
+        
+        result = {
+            'portfolio': portfolio,
+            'eth_value_usd': None,
+            'token_values_usd': {},
+            'total_value_usd': None
+        }
+        
+        # Calculate ETH value if price provided
+        if eth_price_usd is not None:
+            eth_amount = portfolio['eth']['balance_formatted']
+            result['eth_value_usd'] = eth_amount * eth_price_usd
+        
+        # Calculate token values if prices provided
+        if token_prices_usd:
+            for token_addr, token_info in portfolio['tokens'].items():
+                if token_addr in token_prices_usd:
+                    token_amount = token_info['balance_formatted']
+                    token_price = token_prices_usd[token_addr]
+                    result['token_values_usd'][token_addr] = token_amount * token_price
+        
+        # Calculate total value if we have all prices
+        if result['eth_value_usd'] is not None:
+            total = result['eth_value_usd']
+            total += sum(result['token_values_usd'].values())
+            result['total_value_usd'] = total
+        
+        return result
+
+
+"""
+USAGE EXAMPLES:
+===============
+
+1. BASIC PORTFOLIO VIEW:
+------------------------
+from basepy import BaseClient
+
+client = BaseClient()
+portfolio = client.get_portfolio_balance('0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb')
+
+print(f"Wallet: {portfolio['address']}")
+print(f"ETH: {portfolio['eth']['balance_formatted']} ETH")
+print(f"\nTokens:")
+for token_addr, info in portfolio['tokens'].items():
+    if info['balance'] > 0:
+        print(f"  {info['symbol']}: {info['balance_formatted']}")
+
+print(f"\nSummary:")
+print(f"  Total assets: {portfolio['total_assets']}")
+print(f"  Tokens with balance: {portfolio['non_zero_tokens']}")
+
+
+2. SPECIFIC TOKENS ONLY:
+-------------------------
+usdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+dai = '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb'
+
+portfolio = client.get_portfolio_balance(
+    '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+    token_addresses=[usdc, dai]
+)
+
+
+3. WITH USD VALUATION (using external price data):
+--------------------------------------------------
+# Fetch prices from CoinGecko, Chainlink, etc.
+eth_price = 3000.0
+token_prices = {
+    '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913': 1.0,  # USDC
+    '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb': 1.0,  # DAI
+}
+
+portfolio = client.get_portfolio_value(
+    '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+    eth_price_usd=eth_price,
+    token_prices_usd=token_prices
+)
+
+print(f"ETH Value: ${portfolio['eth_value_usd']:.2f}")
+for token, value in portfolio['token_values_usd'].items():
+    symbol = portfolio['portfolio']['tokens'][token]['symbol']
+    print(f"{symbol} Value: ${value:.2f}")
+print(f"Total Portfolio Value: ${portfolio['total_value_usd']:.2f}")
+
+
+4. MONITOR MULTIPLE WALLETS:
+-----------------------------
+wallets = [
+    '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+    '0x456...',
+    '0x789...'
+]
+
+for wallet in wallets:
+    portfolio = client.get_portfolio_balance(wallet)
+    non_zero = portfolio['non_zero_tokens']
+    if non_zero > 0:
+        print(f"{wallet}: {non_zero} tokens")
+
+
+5. FILTER BY TOKEN CATEGORY:
+-----------------------------
+from basepy.abis import get_common_tokens
+
+# Get only stablecoins
+stablecoins = get_common_tokens(8453, categories=['stablecoin'])
+stablecoin_addresses = [t['address'] for t in stablecoins]
+
+portfolio = client.get_portfolio_balance(
+    '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+    token_addresses=stablecoin_addresses
+)
+
+
+COST ANALYSIS:
+==============
+RPC Calls per portfolio check:
+- 1 call for ETH balance
+- 1 multicall for all tokens (regardless of count)
+= ~2 RPC calls total
+
+For 5 tokens: 2 RPC calls (vs 6+ with individual calls)
+For 10 tokens: 2 RPC calls (vs 11+ with individual calls)
+
+This is EXTREMELY efficient compared to calling each token individually!
+"""
 
 # ============================================================================
 # PRODUCTION ENHANCEMENTS SUMMARY

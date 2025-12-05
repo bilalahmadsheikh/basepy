@@ -1,11 +1,14 @@
 """
-Comprehensive BaseClient example showcasing ALL features.
+Comprehensive BaseClient example showcasing ALL features including NEW ERC-20 capabilities.
 
 This example demonstrates:
 - Network connection & health checks
 - Account & block data queries
 - Gas price checks & L1 fee estimation
-- Token operations (ERC-20)
+- Token operations (ERC-20) - ENHANCED
+- Portfolio balance tracking - NEW
+- Transaction decoding - NEW
+- Balance change tracking - NEW
 - Batch operations for performance
 - Monitoring & metrics
 - Developer utilities
@@ -194,18 +197,13 @@ def demo_l1_fee(client):
         print(f"Could not estimate L1 fee: {e}")
 
 
-# ============================================================================
-# FIX 3: Update demo_total_fee_estimation() in basic_connection.py
-# ============================================================================
-
 def demo_total_fee_estimation(client):
     """Demonstrate comprehensive fee estimation for Base."""
     print("\n" + "="*60)
     print("TOTAL FEE ESTIMATION (L1 + L2)")
     print("="*60)
     
-    # FIX: Use a valid transaction that won't revert
-    # Instead of transferring to zero address, use a simple value transfer
+    # Use a valid transaction that won't revert
     tx = {
         'to': '0x0000000000000000000000000000000000000001',  # Valid dummy address
         'from': '0x0000000000000000000000000000000000000002',  # Valid dummy address
@@ -265,10 +263,10 @@ def demo_token_operations(client):
             token_info = balances[usdc_address]
             print(f"{token_info['symbol']} Balance: {token_info['balanceFormatted']:,.6f}")
         
-        # Check allowance - FIX: Use valid 42-character addresses
+        # Check allowance
         print("\n--- Token Allowance ---")
-        owner = '0x0000000000000000000000000000000000000001'  # Valid 42-char address
-        spender = '0x0000000000000000000000000000000000000002'  # Valid 42-char address
+        owner = '0x0000000000000000000000000000000000000001'
+        spender = '0x0000000000000000000000000000000000000002'
         allowance = client.get_token_allowance(usdc_address, owner, spender)
         print(f"Owner: {owner}")
         print(f"Spender: {spender}")
@@ -276,6 +274,216 @@ def demo_token_operations(client):
         
     except Exception as e:
         print(f"Token operations failed: {e}")
+
+
+# ============================================================================
+# NEW: PORTFOLIO BALANCE TRACKING
+# ============================================================================
+
+def demo_portfolio_balance(client):
+    """Demonstrate NEW portfolio balance tracking feature."""
+    print("\n" + "="*60)
+    print("PORTFOLIO BALANCE TRACKING (NEW)")
+    print("="*60)
+    
+    # Example wallet address (Base deployer)
+    wallet = "0x20FE51A9229EEf2cF8Ad9E89d91CAb9312cF3b7A"
+    
+    try:
+        print(f"Checking portfolio for: {wallet}\n")
+        
+        # Get complete portfolio with common Base tokens
+        portfolio = client.get_portfolio_balance(wallet)
+        
+        print("📊 Portfolio Summary:")
+        print(f"   Wallet: {portfolio['address']}")
+        print(f"   Total Assets: {portfolio['total_assets']}")
+        print(f"   Tokens with Balance: {portfolio['non_zero_tokens']}")
+        
+        # ETH Balance
+        print(f"\n💰 ETH Balance:")
+        print(f"   {portfolio['eth']['balance_formatted']:.6f} ETH")
+        print(f"   ({portfolio['eth']['balance']:,} Wei)")
+        
+        # Token Balances
+        print(f"\n🪙 Token Balances:")
+        if portfolio['tokens']:
+            has_balance = False
+            for token_addr, info in portfolio['tokens'].items():
+                if info['balance'] > 0:
+                    has_balance = True
+                    print(f"   ✓ {info['symbol']:8s} | {info['balance_formatted']:>15.6f} | {info['name']}")
+            
+            if not has_balance:
+                print("   (No token balances found)")
+                print(f"   Checked {len(portfolio['tokens'])} common Base tokens")
+        else:
+            print("   (No tokens checked)")
+        
+        # Show cost efficiency
+        print(f"\n💡 Efficiency:")
+        print(f"   RPC Calls: ~2 (1 for ETH + 1 multicall for all tokens)")
+        print(f"   vs Traditional: ~{1 + len(portfolio['tokens'])} individual calls")
+        
+    except Exception as e:
+        print(f"Portfolio balance failed: {e}")
+
+
+# ============================================================================
+# NEW: TRANSACTION DECODING
+# ============================================================================
+
+def demo_transaction_decoding(client):
+    """Demonstrate NEW ERC-20 transaction decoding feature."""
+    print("\n" + "="*60)
+    print("TRANSACTION DECODING (NEW)")
+    print("="*60)
+    
+    from basepy import Transaction
+    
+    tx = Transaction(client)
+    
+    # Example: A transaction with ERC-20 transfers
+    # This is a known Base transaction with token transfers
+    tx_hash = "0x..."  # Replace with actual transaction hash when testing
+    
+    print("Note: This demo requires a real transaction hash with ERC-20 transfers")
+    print("Example usage:\n")
+    
+    print("# 1. Decode all ERC-20 transfers (ZERO RPC COST)")
+    print("transfers = tx.decode_erc20_transfers(tx_hash)")
+    print("for transfer in transfers:")
+    print("    print(f'Token: {transfer[\"token\"]}')")
+    print("    print(f'From: {transfer[\"from\"]}')")
+    print("    print(f'To: {transfer[\"to\"]}')")
+    print("    print(f'Amount: {transfer[\"amount\"]}')")
+    
+    print("\n# 2. Get full transaction details with metadata")
+    print("details = tx.get_full_transaction_details(tx_hash, include_token_metadata=True)")
+    print("print(f'ETH Value: {details[\"eth_value_formatted\"]} ETH')")
+    print("print(f'Status: {details[\"status\"]}')")
+    print("print(f'Token Transfers: {details[\"transfer_count\"]}')")
+    print("for transfer in details['token_transfers']:")
+    print("    print(f'{transfer[\"symbol\"]}: {transfer[\"amount_formatted\"]}')")
+    
+    print("\n# 3. Calculate balance changes for an address")
+    print("changes = tx.get_balance_changes(tx_hash, wallet_address)")
+    print("print(f'ETH Change: {changes[\"eth_change_formatted\"]} ETH')")
+    print("for token, info in changes['token_changes'].items():")
+    print("    print(f'{info[\"symbol\"]}: {info[\"change_formatted\"]}')")
+    
+    print("\n# 4. Classify transaction type")
+    print("classification = tx.classify_transaction(tx_hash)")
+    print("print(f'Type: {classification[\"type\"]}')")
+    print("print(f'Complexity: {classification[\"complexity\"]}')")
+    print("print(f'Tokens Involved: {classification[\"tokens_involved\"]}')")
+    
+    print("\n💡 Cost: All decoding is FREE (uses existing receipt data)")
+
+
+# ============================================================================
+# NEW: ERC-20 CONTRACT HELPER
+# ============================================================================
+
+def demo_erc20_contract(client):
+    """Demonstrate NEW ERC20Contract helper class."""
+    print("\n" + "="*60)
+    print("ERC20CONTRACT HELPER (NEW)")
+    print("="*60)
+    
+    from basepy import ERC20Contract
+    
+    # USDC on Base
+    usdc_address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    
+    try:
+        # Create ERC20Contract instance
+        usdc = ERC20Contract(client, usdc_address)
+        
+        print("--- Token Info (Metadata Cached) ---")
+        print(f"Name: {usdc.name()}")
+        print(f"Symbol: {usdc.symbol()}")
+        print(f"Decimals: {usdc.decimals()}")
+        print(f"Total Supply: {usdc.format_amount(usdc.total_supply())}")
+        
+        # Check balance
+        print("\n--- Balance Operations ---")
+        holder = "0x20FE51A9229EEf2cF8Ad9E89d91CAb9312cF3b7A"
+        balance = usdc.balance_of(holder)
+        print(f"Address: {holder}")
+        print(f"Raw Balance: {balance}")
+        print(f"Formatted: {usdc.format_amount(balance)} {usdc.symbol()}")
+        print(f"Display: {usdc.format_balance(holder)}")
+        
+        # Amount conversion
+        print("\n--- Amount Conversion ---")
+        human_amount = 10.5
+        raw_amount = usdc.parse_amount(human_amount)
+        print(f"Human: {human_amount} USDC")
+        print(f"Raw: {raw_amount}")
+        print(f"Back to human: {usdc.format_amount(raw_amount)}")
+        
+        # Balance checking
+        print("\n--- Balance Checks ---")
+        required = usdc.parse_amount(100)
+        has_enough = usdc.has_sufficient_balance(holder, required)
+        print(f"Required: 100 USDC")
+        print(f"Has sufficient balance: {has_enough}")
+        
+        print("\n💡 All metadata (name, symbol, decimals) is cached!")
+        print("   First call hits RPC, subsequent calls are instant")
+        
+    except Exception as e:
+        print(f"ERC20Contract demo failed: {e}")
+
+
+# ============================================================================
+# NEW: TOKEN FORMATTING UTILITIES
+# ============================================================================
+
+def demo_token_utilities(client):
+    """Demonstrate NEW token formatting utilities."""
+    print("\n" + "="*60)
+    print("TOKEN FORMATTING UTILITIES (NEW)")
+    print("="*60)
+    
+    from basepy import (
+        format_token_amount,
+        parse_token_amount,
+        format_token_balance,
+        normalize_address,
+        shorten_address
+    )
+    
+    print("--- Amount Formatting ---")
+    raw_usdc = 1500000  # 1.5 USDC (6 decimals)
+    formatted = format_token_amount(raw_usdc, 6)
+    print(f"Raw: {raw_usdc} -> Formatted: {formatted} USDC")
+    
+    raw_eth = 1500000000000000000  # 1.5 ETH (18 decimals)
+    formatted_eth = format_token_amount(raw_eth, 18)
+    print(f"Raw: {raw_eth} -> Formatted: {formatted_eth} ETH")
+    
+    print("\n--- Amount Parsing ---")
+    parsed_usdc = parse_token_amount(1.5, 6)
+    print(f"1.5 USDC -> Raw: {parsed_usdc}")
+    
+    parsed_eth = parse_token_amount("1.5", 18)
+    print(f"'1.5' ETH -> Raw: {parsed_eth}")
+    
+    print("\n--- Balance Display ---")
+    balance_str = format_token_balance(1500000, 6, "USDC", precision=2)
+    print(f"Display string: {balance_str}")
+    
+    print("\n--- Address Utilities ---")
+    addr = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    normalized = normalize_address(addr)
+    shortened = shorten_address(addr, chars=6)
+    print(f"Original: {addr}")
+    print(f"Normalized: {normalized}")
+    print(f"Shortened: {shortened}")
+    
+    print("\n💡 These utilities ensure consistent formatting across your app")
 
 
 def demo_batch_operations(client):
@@ -326,7 +534,7 @@ def demo_multicall(client):
     print("MULTICALL (Single RPC for Multiple Calls)")
     print("="*60)
     
-    from basepy.abis import ERC20_ABI
+    from basepy import ERC20_ABI
     
     usdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
     
@@ -466,9 +674,10 @@ def demo_context_manager():
 
 
 def main():
-    """Main example showcasing ALL BaseClient features."""
+    """Main example showcasing ALL BaseClient features including NEW ERC-20 capabilities."""
     print("="*60)
     print("BASE PYTHON SDK - COMPREHENSIVE FEATURE DEMO")
+    print("Including NEW ERC-20 Features!")
     print("="*60)
     
     try:
@@ -498,25 +707,45 @@ def main():
         # Demo 7: Total Fee Estimation
         demo_total_fee_estimation(client)
         
-        # Demo 8: Token Operations
+        # Demo 8: Token Operations (Original)
         demo_token_operations(client)
         
-        # Demo 9: Batch Operations
+        # ============================================
+        # NEW ERC-20 FEATURES
+        # ============================================
+        
+        # Demo 9: Portfolio Balance Tracking (NEW)
+        demo_portfolio_balance(client)
+        
+        # Demo 10: Transaction Decoding (NEW)
+        demo_transaction_decoding(client)
+        
+        # Demo 11: ERC20Contract Helper (NEW)
+        demo_erc20_contract(client)
+        
+        # Demo 12: Token Utilities (NEW)
+        demo_token_utilities(client)
+        
+        # ============================================
+        # ORIGINAL FEATURES
+        # ============================================
+        
+        # Demo 13: Batch Operations
         demo_batch_operations(client)
         
-        # Demo 10: Multicall
+        # Demo 14: Multicall
         demo_multicall(client)
         
-        # Demo 11: Utility Functions
+        # Demo 15: Utility Functions
         demo_utility_functions(client)
         
-        # Demo 12: Configuration
+        # Demo 16: Configuration
         demo_configuration(client)
         
-        # Demo 13: Testnet Connection
+        # Demo 17: Testnet Connection
         demo_testnet_connection()
         
-        # Demo 14: Context Manager
+        # Demo 18: Context Manager
         demo_context_manager()
         
         # Final metrics
@@ -538,6 +767,10 @@ def main():
         print("  ✅ L1 fee calculation (Base-specific)")
         print("  ✅ Total fee estimation (L1 + L2)")
         print("  ✅ ERC-20 token operations")
+        print("  ✅ Portfolio balance tracking (NEW)")
+        print("  ✅ Transaction decoding (NEW)")
+        print("  ✅ ERC20Contract helper (NEW)")
+        print("  ✅ Token utilities (NEW)")
         print("  ✅ Batch operations")
         print("  ✅ Multicall optimization")
         print("  ✅ Developer utilities")

@@ -17,11 +17,24 @@ Features:
 - Comprehensive error handling
 - Performance tracking
 - Thread-safe operations
+- **ERC-20 transfer decoding (zero RPC cost)**
+- **Transaction analysis and classification**
+- **Balance change calculation**
 """
 
 from typing import Optional, Dict, Any, Union, List, Callable
 from .exceptions import TransactionError, ValidationError, RPCError
-from .utils import to_wei
+from .utils import (
+    to_wei,
+    decode_erc20_transfer_log,
+    decode_all_erc20_transfers,
+    filter_transfers_by_address,
+    filter_transfers_by_token,
+    get_transfer_direction,
+    calculate_balance_change,
+    format_token_amount,
+    convert_hex_bytes
+)
 from functools import wraps
 import time
 import logging
@@ -50,19 +63,7 @@ def _convert_hex_bytes(obj):
         This is critical for API endpoints that return transaction data,
         as HexBytes objects cannot be JSON serialized directly.
     """
-    if hasattr(obj, 'hex'):
-        # Convert HexBytes to hex string
-        return obj.hex()
-    elif isinstance(obj, dict):
-        # Recursively convert dictionary values
-        return {k: _convert_hex_bytes(v) for k, v in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        # Recursively convert list/tuple items
-        return [_convert_hex_bytes(item) for item in obj]
-    elif isinstance(obj, bytes):
-        # Convert raw bytes to hex string
-        return '0x' + obj.hex()
-    return obj
+    return convert_hex_bytes(obj)
 
 
 def _normalize_tx_hash(tx_hash: str) -> str:
@@ -359,6 +360,8 @@ class Transaction:
     - Simulation before sending
     - Comprehensive metrics
     - Thread-safe operations
+    - **ERC-20 transfer decoding (zero cost)**
+    - **Transaction analysis and classification**
     
     PUBLICLY ACCESSIBLE - No authentication required for read operations.
     
@@ -366,8 +369,12 @@ class Transaction:
         >>> from basepy import BaseClient, Transaction
         >>> client = BaseClient()
         >>> tx = Transaction(client)
-        >>> details = tx.get("0x123...")
-        >>> tx.wait_for_confirmation("0x123...")
+        >>> 
+        >>> # Get transaction with decoded transfers
+        >>> details = tx.get_full_transaction_details("0x123...")
+        >>> print(f"ETH: {details['eth_value_formatted']}")
+        >>> for transfer in details['token_transfers']:
+        ...     print(f"Token: {transfer['amount_formatted']} {transfer['symbol']}")
     
     For WRITE operations (wallet required):
         >>> from basepy import BaseClient, Wallet, Transaction
@@ -706,6 +713,510 @@ class Transaction:
                 receipts[tx_hash] = None
         
         return receipts
+
+    # =========================================================================
+    # ERC-20 TRANSFER DECODING (NEW - Zero RPC Cost)
+    # =========================================================================
+
+    @track_transaction
+    def decode_erc20_transfers(
+        self,
+        tx_hash: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Decode ALL ERC-20 transfers from a transaction receipt.
+        
+        This function extracts all token transfers WITHOUT making any RPC calls.
+        Cost: FREE (uses existing receipt data)
+        
+        Args:
+            tx_hash: Transaction hash
+            
+        Returns:
+            List of decoded transfers:
+            [
+                {
+                    'token': '0xTokenAddress',
+                    'from': '0xSender',
+                    'to': '0xRecipient',
+                    'amount': 1000000,
+                    'log_index': 0
+                }
+            ]
+            
+        Cost: FREE - no additional RPC calls
+            
+        Example:
+            >>> transfers = transaction.decode_erc20_transfers("0x123...")
+            >>> print(f"Found {len(transfers)} token transfers")
+            >>> for t in transfers:
+            ...     print(f"{t['token']}: {t['amount']}")
+        """
+        try:
+            receipt = self.get_receipt(tx_hash)
+            transfers = decode_all_erc20_transfers(receipt)
+            
+            logger.debug(f"Decoded {len(transfers)} ERC-20 transfers from {tx_hash}")
+            return transfers
+            
+        except Exception as e:
+            logger.error(f"Failed to decode ERC-20 transfers: {e}")
+            raise TransactionError(f"Transfer decoding failed: {str(e)}") from e
+
+    @track_transaction
+    def get_full_transaction_details(
+        self,
+        tx_hash: str,
+        include_token_metadata: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Get complete transaction details with ETH + decoded ERC-20 transfers.
+        
+        This is a comprehensive view showing everything that happened in a transaction.
+        
+        Args:
+            tx_hash: Transaction hash
+            include_token_metadata: Fetch token symbols/decimals (costs RPC)
+            
+        Returns:
+            Dictionary with:
+                - tx_hash: Transaction hash
+                - from: Sender address
+                - to: Recipient address
+                - eth_value: ETH transferred (Wei)
+                - eth_value_formatted: ETH transferred (decimal)
+                - status: 'confirmed' or 'failed'
+                - gas_used: Gas consumed
+                - token_transfers: List of decoded ERC-20 transfers
+                - transfer_count: Number of token transfers
+                
+        Cost: FREE for basic info
+              +1 RPC call per unique token if include_token_metadata=True
+            
+        Example:
+            >>> details = transaction.get_full_transaction_details("0x123...")
+            >>> print(f"Status: {details['status']}")
+            >>> print(f"ETH: {details['eth_value_formatted']}")
+            >>> for transfer in details['token_transfers']:
+            ...     print(f"  {transfer['symbol']}: {transfer['amount_formatted']}")
+        """
+        try:
+            # Get transaction and receipt
+            tx = self.get(tx_hash)
+            receipt = self.get_receipt(tx_hash)
+            
+            # Basic info
+            details = {
+                'tx_hash': tx_hash,
+                'from': tx['from'],
+                'to': tx['to'],
+                'eth_value': tx['value'],
+                'eth_value_formatted': tx['value'] / 10**18,
+                'status': 'confirmed' if receipt['status'] == 1 else 'failed',
+                'gas_used': receipt['gasUsed'],
+                'block_number': receipt['blockNumber'],
+                'token_transfers': [],
+                'transfer_count': 0,
+            }
+            
+            # Decode ERC-20 transfers
+            raw_transfers = decode_all_erc20_transfers(receipt)
+            
+            if raw_transfers:
+                details['transfer_count'] = len(raw_transfers)
+                
+                # Optionally add token metadata
+                if include_token_metadata:
+                    from .abis import ERC20_ABI
+                    
+                    # Get unique tokens
+                    unique_tokens = list(set(t['token'] for t in raw_transfers))
+                    
+                    # Fetch metadata for all tokens in one multicall
+                    calls = []
+                    for token in unique_tokens:
+                        calls.extend([
+                            {'contract': token, 'abi': ERC20_ABI, 'function': 'symbol'},
+                            {'contract': token, 'abi': ERC20_ABI, 'function': 'decimals'},
+                        ])
+                    
+                    try:
+                        results = self.client.multicall(calls)
+                        
+                        # Build metadata map
+                        token_metadata = {}
+                        for i, token in enumerate(unique_tokens):
+                            idx = i * 2
+                            if idx + 1 < len(results):
+                                token_metadata[token] = {
+                                    'symbol': results[idx],
+                                    'decimals': results[idx + 1]
+                                }
+                        
+                        # Add metadata to transfers
+                        for transfer in raw_transfers:
+                            token_addr = transfer['token']
+                            if token_addr in token_metadata:
+                                metadata = token_metadata[token_addr]
+                                transfer['symbol'] = metadata['symbol']
+                                transfer['decimals'] = metadata['decimals']
+                                transfer['amount_formatted'] = format_token_amount(
+                                    transfer['amount'],
+                                    metadata['decimals']
+                                )
+                            else:
+                                transfer['symbol'] = 'UNKNOWN'
+                                transfer['decimals'] = 18
+                                transfer['amount_formatted'] = transfer['amount'] / 10**18
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch token metadata: {e}")
+                        # Add transfers without metadata
+                        for transfer in raw_transfers:
+                            transfer['symbol'] = 'UNKNOWN'
+                            transfer['decimals'] = 18
+                            transfer['amount_formatted'] = transfer['amount'] / 10**18
+                
+                details['token_transfers'] = raw_transfers
+            
+            return details
+            
+        except Exception as e:
+            logger.error(f"Failed to get full transaction details: {e}")
+            raise TransactionError(f"Failed to get transaction details: {str(e)}") from e
+
+    @track_transaction
+    def check_token_transfer(
+        self,
+        tx_hash: str,
+        token_address: str,
+        address: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Check if transaction transferred a specific token.
+        
+        Cost: FREE (uses existing receipt data)
+        
+        Args:
+            tx_hash: Transaction hash
+            token_address: Token to check
+            address: Optional address filter (sender or receiver)
+            
+        Returns:
+            {
+                'found': True/False,
+                'transfers': [list of matching transfers],
+                'total_amount': Sum of amounts
+            }
+            
+        Example:
+            >>> result = transaction.check_token_transfer(
+            ...     "0x123...",
+            ...     "0xUSDC...",
+            ...     "0xMyAddress..."
+            ... )
+            >>> if result['found']:
+            ...     print(f"Found {len(result['transfers'])} USDC transfers")
+        """
+        try:
+            # Decode all transfers
+            all_transfers = self.decode_erc20_transfers(tx_hash)
+            
+            # Filter by token
+            token_transfers = filter_transfers_by_token(all_transfers, token_address)
+            
+            # Optionally filter by address
+            if address:
+                token_transfers = filter_transfers_by_address(token_transfers, address, 'both')
+            
+            # Calculate total amount
+            total_amount = sum(t['amount'] for t in token_transfers)
+            
+            return {
+                'found': len(token_transfers) > 0,
+                'transfers': token_transfers,
+                'total_amount': total_amount,
+                'transfer_count': len(token_transfers),
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to check token transfer: {e}")
+            raise TransactionError(f"Token transfer check failed: {str(e)}") from e
+
+    @track_transaction
+    def get_balance_changes(
+        self,
+        tx_hash: str,
+        address: str,
+        check_current_balance: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Calculate balance changes for an address from a transaction.
+        
+        Args:
+            tx_hash: Transaction hash
+            address: Address to check
+            check_current_balance: Get current balance (costs extra RPC)
+            
+        Returns:
+            {
+                'address': '0x...',
+                'eth_change': -100000000000000000,  # Negative = sent
+                'eth_change_formatted': -0.1,
+                'token_changes': {
+                    '0xUSDC...': {
+                        'symbol': 'USDC',
+                        'change': 1000000,  # Positive = received
+                        'change_formatted': 1.0
+                    }
+                },
+                'current_balances': {...}  # if check_current_balance=True
+            }
+            
+        Cost: FREE for changes
+              +1 RPC for ETH balance + 1 multicall for tokens if check_current_balance=True
+            
+        Example:
+            >>> changes = transaction.get_balance_changes("0x123...", "0xMyAddr...")
+            >>> if changes['eth_change'] < 0:
+            ...     print(f"Sent {abs(changes['eth_change_formatted'])} ETH")
+            >>> for token, info in changes['token_changes'].items():
+            ...     if info['change'] > 0:
+            ...         print(f"Received {info['change_formatted']} {info['symbol']}")
+        """
+        try:
+            from .abis import ERC20_ABI
+            
+            # Get transaction details
+            tx = self.get(tx_hash)
+            receipt = self.get_receipt(tx_hash)
+            
+            address = self.client._validate_address(address)
+            
+            # Calculate ETH change
+            eth_change = 0
+            if tx['from'] == address:
+                # Sent ETH (including gas costs)
+                gas_cost = receipt['gasUsed'] * receipt.get('effectiveGasPrice', tx.get('gasPrice', 0))
+                eth_change = -(tx['value'] + gas_cost)
+            elif tx['to'] == address:
+                # Received ETH
+                eth_change = tx['value']
+            
+            result = {
+                'address': address,
+                'tx_hash': tx_hash,
+                'eth_change': eth_change,
+                'eth_change_formatted': eth_change / 10**18,
+                'token_changes': {},
+            }
+            
+            # Calculate token changes
+            all_transfers = decode_all_erc20_transfers(receipt)
+            
+            if all_transfers:
+                # Group by token
+                token_groups = {}
+                for transfer in all_transfers:
+                    token = transfer['token']
+                    if token not in token_groups:
+                        token_groups[token] = []
+                    token_groups[token].append(transfer)
+                
+                # Calculate change for each token
+                for token, transfers in token_groups.items():
+                    change = calculate_balance_change(transfers, address, token)
+                    
+                    if change != 0:  # Only include tokens with changes
+                        result['token_changes'][token] = {
+                            'change': change,
+                            'change_formatted': 0,  # Will update with metadata
+                            'symbol': 'UNKNOWN',
+                            'decimals': 18,
+                        }
+                
+                # Fetch token metadata if there are changes
+                if result['token_changes']:
+                    try:
+                        calls = []
+                        tokens_list = list(result['token_changes'].keys())
+                        
+                        for token in tokens_list:
+                            calls.extend([
+                                {'contract': token, 'abi': ERC20_ABI, 'function': 'symbol'},
+                                {'contract': token, 'abi': ERC20_ABI, 'function': 'decimals'},
+                            ])
+                        
+                        results = self.client.multicall(calls)
+                        
+                        for i, token in enumerate(tokens_list):
+                            idx = i * 2
+                            if idx + 1 < len(results):
+                                symbol = results[idx]
+                                decimals = results[idx + 1]
+                                
+                                result['token_changes'][token]['symbol'] = symbol
+                                result['token_changes'][token]['decimals'] = decimals
+                                result['token_changes'][token]['change_formatted'] = format_token_amount(
+                                    result['token_changes'][token]['change'],
+                                    decimals
+                                )
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch token metadata: {e}")
+            
+            # Optionally get current balances
+            if check_current_balance:
+                try:
+                    current_balances = {
+                        'eth': self.client.get_balance(address),
+                        'tokens': {}
+                    }
+                    
+                    if result['token_changes']:
+                        token_list = list(result['token_changes'].keys())
+                        balances = self.client.batch_get_token_balances(address, token_list)
+                        current_balances['tokens'] = balances
+                    
+                    result['current_balances'] = current_balances
+                except Exception as e:
+                    logger.warning(f"Failed to get current balances: {e}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate balance changes: {e}")
+            raise TransactionError(f"Balance change calculation failed: {str(e)}") from e
+
+    @track_transaction
+    def classify_transaction(
+        self,
+        tx_hash: str
+    ) -> Dict[str, Any]:
+        """
+        Classify transaction type and participants.
+        
+        Cost: FREE (analysis of existing data)
+        
+        Args:
+            tx_hash: Transaction hash
+            
+        Returns:
+            {
+                'tx_hash': '0x...',
+                'type': 'token_transfer',  # or 'eth_transfer', 'contract_interaction', 'swap'
+                'participants': ['0xFrom...', '0xTo...'],
+                'tokens_involved': ['0xUSDC...'],
+                'eth_involved': True,
+                'contract_calls': 1,
+                'complexity': 'simple'  # or 'medium', 'complex'
+            }
+            
+        Example:
+            >>> classification = transaction.classify_transaction("0x123...")
+            >>> print(f"Type: {classification['type']}")
+            >>> print(f"Complexity: {classification['complexity']}")
+        """
+        try:
+            tx = self.get(tx_hash)
+            receipt = self.get_receipt(tx_hash)
+            
+            # Basic info
+            classification = {
+                'tx_hash': tx_hash,
+                'type': 'unknown',
+                'participants': [tx['from']],
+                'tokens_involved': [],
+                'eth_involved': tx['value'] > 0,
+                'contract_calls': 0,
+                'complexity': 'simple',
+            }
+            
+            if tx['to']:
+                classification['participants'].append(tx['to'])
+            
+            # Check if contract interaction
+            if tx['to']:
+                is_contract = self.client.is_contract(tx['to'])
+                if is_contract:
+                    classification['contract_calls'] += 1
+            
+            # Decode token transfers
+            token_transfers = decode_all_erc20_transfers(receipt)
+            
+            if token_transfers:
+                unique_tokens = list(set(t['token'] for t in token_transfers))
+                classification['tokens_involved'] = unique_tokens
+                
+                # Add transfer participants
+                for transfer in token_transfers:
+                    if transfer['from'] not in classification['participants']:
+                        classification['participants'].append(transfer['from'])
+                    if transfer['to'] not in classification['participants']:
+                        classification['participants'].append(transfer['to'])
+            
+            # Classify type
+            if len(token_transfers) == 0 and tx['value'] > 0:
+                classification['type'] = 'eth_transfer'
+            elif len(token_transfers) == 1 and tx['value'] == 0:
+                classification['type'] = 'token_transfer'
+            elif len(token_transfers) >= 2:
+                classification['type'] = 'swap'  # Multiple tokens = likely a swap
+            elif classification['contract_calls'] > 0:
+                classification['type'] = 'contract_interaction'
+            
+            # Determine complexity
+            total_operations = len(token_transfers) + classification['contract_calls']
+            if total_operations <= 1:
+                classification['complexity'] = 'simple'
+            elif total_operations <= 3:
+                classification['complexity'] = 'medium'
+            else:
+                classification['complexity'] = 'complex'
+            
+            return classification
+            
+        except Exception as e:
+            logger.error(f"Failed to classify transaction: {e}")
+            raise TransactionError(f"Transaction classification failed: {str(e)}") from e
+
+    @track_transaction
+    def batch_decode_transactions(
+        self,
+        tx_hashes: List[str],
+        include_token_metadata: bool = False
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Decode multiple transactions efficiently.
+        
+        Args:
+            tx_hashes: List of transaction hashes
+            include_token_metadata: Fetch token symbols/decimals
+            
+        Returns:
+            Dictionary mapping tx_hash to decoded details
+            
+        Cost: 2 RPC calls per tx (get tx + get receipt)
+              +1 RPC per unique token if include_token_metadata=True
+            
+        Example:
+            >>> hashes = ["0x123...", "0x456..."]
+            >>> results = transaction.batch_decode_transactions(hashes)
+            >>> for tx_hash, details in results.items():
+            ...     print(f"{tx_hash}: {details['transfer_count']} transfers")
+        """
+        results = {}
+        
+        for tx_hash in tx_hashes:
+            try:
+                results[tx_hash] = self.get_full_transaction_details(
+                    tx_hash,
+                    include_token_metadata=include_token_metadata
+                )
+            except Exception as e:
+                logger.warning(f"Failed to decode {tx_hash}: {e}")
+                results[tx_hash] = {'error': str(e)}
+        
+        return results
 
     # =========================================================================
     # WRITE OPERATIONS - Send transactions (REQUIRES WALLET)
@@ -1491,29 +2002,23 @@ class Transaction:
 # - Transaction cost breakdown
 # - Optimized for Base network characteristics
 # 
-# NEW CLASSES:
-# - TransactionMetrics: Thread-safe metrics collection
-# - NonceManager: Nonce management with caching
-# - GasStrategy: Smart gas pricing strategies
+# ✅ NEW: ERC-20 TRANSFER DECODING (Zero RPC Cost)
+# - decode_erc20_transfers(): Extract all token transfers from receipt
+# - get_full_transaction_details(): Complete transaction view (ETH + tokens)
+# - check_token_transfer(): Check if specific token was transferred
+# - get_balance_changes(): Calculate what changed for an address
+# - classify_transaction(): Automatically categorize transaction type
+# - batch_decode_transactions(): Decode multiple transactions efficiently
 # 
 # NEW FEATURES:
-# - simulate(): Test transactions before sending
-# - send_batch(): Send multiple transactions
-# - get_transaction_cost(): Full cost breakdown
-# - estimate_total_cost(): Pre-send cost estimation
-# - Multiple gas strategies
-# - EIP-1559 support
-# - Confirmation waiting with block counts
-# 
-# ENHANCED METHODS:
-# - send_eth(): Added simulation, retry, gas strategies
-# - send_erc20(): Added simulation, retry, balance checks
-# - send_raw_transaction(): For custom contract calls
-# - wait_for_confirmation(): Multiple confirmation support
-# - batch_get_receipts(): Efficient multi-receipt fetching
+# - ERC-20 transfer decoding (zero cost)
+# - Transaction classification
+# - Balance change tracking
+# - Token transfer filtering
+# - Comprehensive transaction analysis
 # 
 # BACKWARD COMPATIBILITY:
 # - All existing methods work unchanged
-# - New features are opt-in via parameters
+# - New features are opt-in via new methods
 # - Default behavior preserved
 # ============================================================================
