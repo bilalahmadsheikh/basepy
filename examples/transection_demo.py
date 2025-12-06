@@ -1,25 +1,23 @@
 """
-Transaction Demo - Showcasing ALL Features Including NEW ERC-20 Decoding
-=========================================================================
+Transaction Demo - Complete Testing Suite
+==========================================
 
 This demonstrates:
-- Transaction details with enhanced formatting
-- Transaction status checking
-- Cost analysis (L1 + L2 fees)
-- NEW: ERC-20 transfer decoding (ZERO RPC COST)
-- NEW: Full transaction details with token metadata
-- NEW: Balance change tracking
-- NEW: Transaction classification
-- Gas pricing strategies
-- Cost estimation
-- Real-time monitoring
+✅ READ operations (public, no wallet needed)
+✅ WRITE operations (with YOUR testnet wallet)
+✅ ERC-20 transfer decoding (ZERO RPC COST)
+✅ Full transaction analysis
+✅ Balance tracking
+✅ Real transaction monitoring
 
-All examples use REAL Base mainnet transactions!
+Tests YOUR wallet on Base Sepolia testnet!
 """
 
-from basepy import BaseClient, Transaction
+from basepy import BaseClient, Wallet, Transaction
+import os
 import time
 from datetime import datetime
+from dotenv import load_dotenv
 
 
 # ============================================================================
@@ -57,6 +55,10 @@ def print_info(text: str):
     print(Colors.BLUE + "ℹ️  " + text + Colors.END)
 
 
+def print_warning(text: str):
+    print(Colors.YELLOW + "⚠️  " + text + Colors.END)
+
+
 def format_eth(wei: int) -> str:
     """Format Wei to ETH."""
     eth = wei / 10**18
@@ -69,372 +71,403 @@ def format_eth(wei: int) -> str:
 
 
 # ============================================================================
-# GET REAL TRANSACTIONS
+# READ OPERATIONS (PUBLIC - NO WALLET NEEDED)
 # ============================================================================
 
-def get_real_eth_transfer(client: BaseClient):
-    """Get a real ETH transfer transaction."""
+def demo_query_real_transaction(tx_handler: Transaction, client: BaseClient):
+    """Demo: Query a real mainnet transaction."""
+    print_header("DEMO 1: QUERY REAL TRANSACTION (READ - PUBLIC)")
+    
+    print(f"\n{Colors.BOLD}What This Tests:{Colors.END}")
+    print("  • Get transaction details from blockchain")
+    print("  • Parse transaction data")
+    print("  • Calculate costs")
+    print("  • PUBLIC ACCESS - No wallet needed")
+    
+    # Find a recent transaction
+    print(f"\n{Colors.YELLOW}🔍 Finding recent Base Sepolia transaction...{Colors.END}")
+    
     try:
+        # Get a recent block with transactions
         block = client.get_block('latest', full_transactions=True)
-        for tx in block['transactions']:
-            if tx['value'] > 0 and (not tx['to'] or not client.is_contract(tx['to'])):
-                return tx['hash'].hex() if hasattr(tx['hash'], 'hex') else tx['hash']
-    except:
-        pass
-    return None
-
-
-def get_real_token_transfer(client: BaseClient):
-    """Get a real token transfer transaction."""
-    try:
-        # Look through recent blocks for a transaction with logs (likely token transfer)
-        current_block = client.get_block_number()
         
-        for i in range(10):  # Check last 10 blocks
-            block = client.get_block(current_block - i, full_transactions=True)
-            for tx in block['transactions']:
-                tx_hash = tx['hash'].hex() if hasattr(tx['hash'], 'hex') else tx['hash']
-                try:
-                    receipt = client.w3.eth.get_transaction_receipt(tx_hash)
-                    # Check if has logs (events) - likely a token transfer
-                    if len(receipt['logs']) > 0:
-                        # Check if it's an ERC-20 transfer
-                        from basepy.utils import is_erc20_transfer_log
-                        for log in receipt['logs']:
-                            if is_erc20_transfer_log(log):
-                                return tx_hash
-                except:
-                    continue
-    except:
-        pass
-    return None
+        if block['transactions']:
+            # Get first transaction
+            tx_hash = block['transactions'][0]['hash']
+            if hasattr(tx_hash, 'hex'):
+                tx_hash = tx_hash.hex()
+            
+            print_success(f"Found: {tx_hash[:20]}...")
+            
+            # Get transaction details
+            print(f"\n{Colors.BOLD}Getting transaction details...{Colors.END}")
+            tx = tx_handler.get(tx_hash)
+            
+            print(f"\n{Colors.BOLD}Transaction Info:{Colors.END}")
+            print(f"  Hash:   {tx_hash[:20]}...")
+            print(f"  From:   {tx['from']}")
+            print(f"  To:     {tx['to'] if tx['to'] else 'Contract Creation'}")
+            print(f"  Value:  {format_eth(tx['value'])}")
+            print(f"  Block:  {tx.get('blockNumber', 'Pending')}")
+            
+            # Get receipt if available
+            try:
+                receipt = tx_handler.get_receipt(tx_hash)
+                status = "✅ Success" if receipt['status'] == 1 else "❌ Failed"
+                print(f"  Status: {status}")
+                print(f"  Gas:    {receipt['gasUsed']:,}")
+                
+                print_success("Transaction queried successfully")
+            except:
+                print_info("Transaction pending (no receipt yet)")
+        else:
+            print_info("No transactions in latest block")
+    
+    except Exception as e:
+        print_error(f"Query failed: {e}")
 
-
-# ============================================================================
-# NEW: ERC-20 TRANSFER DECODING DEMOS
-# ============================================================================
 
 def demo_decode_erc20_transfers(tx_handler: Transaction, client: BaseClient):
-    """Demonstrate NEW zero-cost ERC-20 transfer decoding."""
-    print_header("NEW: ERC-20 TRANSFER DECODING (ZERO RPC COST)")
+    """Demo: Decode ERC-20 transfers (ZERO RPC cost)."""
+    print_header("DEMO 2: DECODE ERC-20 TRANSFERS (ZERO RPC COST)")
     
-    print(f"\n{Colors.BOLD}What's Special About This:{Colors.END}")
-    print("  • Extracts ALL ERC-20 transfers from transaction logs")
-    print("  • ZERO additional RPC calls (uses existing receipt data)")
-    print("  • Works with ANY ERC-20 token")
-    print("  • Perfect for transaction monitoring")
+    print(f"\n{Colors.BOLD}What This Tests:{Colors.END}")
+    print("  • Extract ALL ERC-20 transfers from transaction")
+    print("  • ZERO additional RPC calls")
+    print("  • Get token metadata (symbols, decimals)")
+    print("  • Format human-readable amounts")
     
-    # Try to find a real token transfer
-    print(f"\n{Colors.YELLOW}🔍 Looking for a real token transfer transaction...{Colors.END}")
-    token_tx = get_real_token_transfer(client)
-    
-    if not token_tx:
-        print_info("No recent token transfers found, using example")
-        print("\nExample usage:")
-        print("```python")
-        print("transfers = tx.decode_erc20_transfers(tx_hash)")
-        print("for transfer in transfers:")
-        print("    print(f'Token: {transfer[\"token\"]}')")
-        print("    print(f'From: {transfer[\"from\"]}')")
-        print("    print(f'To: {transfer[\"to\"]}')")
-        print("    print(f'Amount: {transfer[\"amount\"]}')")
-        print("```")
-        return
+    print(f"\n{Colors.YELLOW}🔍 Looking for token transfer transaction...{Colors.END}")
     
     try:
-        print(f"Found: {token_tx[:20]}...")
+        current_block = client.get_block_number()
         
-        # Decode transfers (ZERO RPC COST!)
-        print(f"\n{Colors.BOLD}Decoding ERC-20 transfers...{Colors.END}")
-        start_time = time.time()
+        # Check last 20 blocks for token transfers
+        for i in range(20):
+            try:
+                block = client.get_block(current_block - i, full_transactions=True)
+                
+                for tx in block['transactions']:
+                    tx_hash = tx['hash'].hex() if hasattr(tx['hash'], 'hex') else tx['hash']
+                    
+                    try:
+                        # Quick check if has logs (events)
+                        receipt = client.w3.eth.get_transaction_receipt(tx_hash)
+                        
+                        if len(receipt['logs']) > 0:
+                            # Try to decode
+                            transfers = tx_handler.decode_erc20_transfers(tx_hash)
+                            
+                            if transfers:
+                                print_success(f"Found transaction with {len(transfers)} transfer(s)")
+                                print(f"Transaction: {tx_hash[:20]}...")
+                                
+                                # Show transfers
+                                print(f"\n{Colors.BOLD}Decoded Transfers:{Colors.END}\n")
+                                
+                                for idx, transfer in enumerate(transfers[:3], 1):  # Show first 3
+                                    print(f"Transfer #{idx}:")
+                                    print(f"  Token:  {transfer['token'][:10]}...")
+                                    print(f"  From:   {transfer['from'][:10]}...")
+                                    print(f"  To:     {transfer['to'][:10]}...")
+                                    print(f"  Amount: {transfer['amount']}")
+                                    print()
+                                
+                                if len(transfers) > 3:
+                                    print(f"  ... and {len(transfers) - 3} more transfer(s)")
+                                
+                                print_success(f"Decoded {len(transfers)} transfer(s) with ZERO RPC calls!")
+                                return
+                    except:
+                        continue
+            except:
+                continue
         
-        transfers = tx_handler.decode_erc20_transfers(token_tx)
-        
-        decode_time = time.time() - start_time
-        
-        if transfers:
-            print(f"\n{Colors.GREEN}✓ Found {len(transfers)} ERC-20 transfer(s):{Colors.END}\n")
-            
-            for i, transfer in enumerate(transfers, 1):
-                print(f"{Colors.BOLD}Transfer #{i}:{Colors.END}")
-                print(f"  Token:    {transfer['token']}")
-                print(f"  From:     {transfer['from']}")
-                print(f"  To:       {transfer['to']}")
-                print(f"  Amount:   {transfer['amount']}")
-                print(f"  Log Index: {transfer['log_index']}")
-                print()
-            
-            print(f"{Colors.BOLD}Performance:{Colors.END}")
-            print(f"  Decode Time: {decode_time*1000:.2f}ms")
-            print(f"  RPC Calls:   {Colors.GREEN}0 (FREE!){Colors.END}")
-            
-            print_success("Decoding complete")
-        else:
-            print_info("No ERC-20 transfers found in this transaction")
-            
+        print_info("No token transfers found in recent blocks")
+        print("💡 Token transfers are common - try again in a few minutes")
+    
     except Exception as e:
-        print_error(f"Failed to decode: {str(e)[:80]}...")
+        print_error(f"Decoding failed: {e}")
 
 
-def demo_full_transaction_details(tx_handler: Transaction, client: BaseClient):
-    """Demonstrate NEW full transaction details with token metadata."""
-    print_header("NEW: FULL TRANSACTION DETAILS WITH TOKEN METADATA")
+# ============================================================================
+# WRITE OPERATIONS (REQUIRES YOUR WALLET)
+# ============================================================================
+
+def demo_check_wallet(wallet: Wallet, client: BaseClient):
+    """Demo: Check wallet status before testing."""
+    print_header("YOUR WALLET STATUS")
     
-    print(f"\n{Colors.BOLD}What You Get:{Colors.END}")
-    print("  • Complete transaction info (hash, from, to, value, status)")
-    print("  • ALL ERC-20 transfers decoded")
-    print("  • Token metadata (symbol, decimals) for each transfer")
-    print("  • Formatted amounts (human-readable)")
-    print("  • Transfer count and classification")
+    print(f"\n{Colors.BOLD}Wallet Info:{Colors.END}")
+    print(f"  Address:  {wallet.address}")
+    print(f"  Network:  Base Sepolia (Chain ID: {client.get_chain_id()})")
     
-    token_tx = get_real_token_transfer(client)
+    # Get balance
+    balance = wallet.get_balance()
+    balance_eth = balance / 10**18
     
-    if not token_tx:
-        print_info("No recent token transfers found")
-        return
+    print(f"\n{Colors.BOLD}Balance:{Colors.END}")
+    print(f"  {balance_eth:.6f} ETH")
+    print(f"  ({balance:,} Wei)")
+    
+    # Check nonce
+    nonce = wallet.get_nonce()
+    print(f"\n{Colors.BOLD}Transactions:{Colors.END}")
+    print(f"  Sent: {nonce}")
+    
+    # Block explorer
+    explorer = f"https://sepolia.basescan.org/address/{wallet.address}"
+    print(f"\n{Colors.BOLD}Block Explorer:{Colors.END}")
+    print(f"  {explorer}")
+    
+    # Status check
+    print(f"\n{Colors.BOLD}Status:{Colors.END}")
+    if balance_eth == 0:
+        print_error("NO BALANCE - Cannot test write operations")
+        print("\n💡 Get testnet ETH from:")
+        print("   https://www.alchemy.com/faucets/base-sepolia")
+        return False
+    elif balance_eth < 0.01:
+        print_warning("LOW BALANCE - Limited testing possible")
+        print("   Consider getting more testnet ETH")
+        return True
+    else:
+        print_success("BALANCE GOOD - Ready for testing!")
+        return True
+
+
+def demo_estimate_costs(tx_handler: Transaction, wallet: Wallet, client: BaseClient):
+    """Demo: Estimate transaction costs before sending."""
+    print_header("DEMO 3: ESTIMATE TRANSACTION COSTS")
+    
+    print(f"\n{Colors.BOLD}What This Tests:{Colors.END}")
+    print("  • Estimate gas before sending")
+    print("  • Calculate L1 + L2 fees (Base-specific)")
+    print("  • Different gas strategies")
+    print("  • NO COST - Just estimation")
+    
+    # Test address (valid 42-character address) - just for estimation
+    test_recipient = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0"  # Fixed: Added missing char
+    test_amount = client.parse_units("0.001", 18)  # 0.001 ETH
+    
+    print(f"\n{Colors.BOLD}Estimating cost to send 0.001 ETH...{Colors.END}")
     
     try:
-        print(f"\n{Colors.YELLOW}Analyzing: {token_tx[:20]}...{Colors.END}")
+        # Estimate with different strategies
+        strategies = ['slow', 'standard', 'fast']
         
-        # Get full details with metadata
-        print(f"\n{Colors.BOLD}Getting full transaction details...{Colors.END}")
-        start_time = time.time()
+        for strategy in strategies:
+            cost = tx_handler.estimate_total_cost(
+                to=test_recipient,
+                value=test_amount,
+                gas_strategy=strategy
+            )
+            
+            print(f"\n{Colors.BOLD}{strategy.upper()} Strategy:{Colors.END}")
+            print(f"  L2 Gas:   {cost['l2_gas']:,}")
+            print(f"  L2 Cost:  {cost['l2_fee_eth']:.8f} ETH")
+            print(f"  L1 Cost:  {cost['l1_fee_eth']:.8f} ETH")
+            print(f"  TOTAL:    {Colors.BOLD}{cost['total_fee_eth']:.8f} ETH{Colors.END}")
         
-        details = tx_handler.get_full_transaction_details(
-            token_tx,
-            include_token_metadata=True  # Include symbol, decimals
+        print_success("Cost estimation complete")
+        return True
+    
+    except Exception as e:
+        print_error(f"Estimation failed: {e}")
+        return False
+
+
+def demo_simulate_transaction(tx_handler: Transaction, wallet: Wallet, client: BaseClient):
+    """Demo: Simulate transaction before sending."""
+    print_header("DEMO 4: SIMULATE TRANSACTION (NO COST)")
+    
+    print(f"\n{Colors.BOLD}What This Tests:{Colors.END}")
+    print("  • Test transaction without sending")
+    print("  • Verify it will succeed")
+    print("  • Catch errors before spending gas")
+    print("  • ZERO COST - Pure simulation")
+    
+    test_recipient = wallet.address  # ✅ This is safest!
+    
+    test_amount = client.parse_units("0.0001", 18)
+    
+    print(f"\n{Colors.BOLD}Simulating 0.0001 ETH transfer...{Colors.END}")
+    print(f"  From: {wallet.address[:20]}...")
+    print(f"  To:   {test_recipient[:20]}...")
+    
+    try:
+        result = tx_handler.simulate(
+            to=test_recipient,
+            value=test_amount,
+            from_address=wallet.address
         )
         
-        query_time = time.time() - start_time
+        print_success("Simulation successful!")
+        print("  ✅ Transaction will succeed if sent")
+        return True
+    
+    except Exception as e:
+        print_error(f"Simulation failed: {e}")
+        print("  ❌ Transaction would fail if sent")
+        return False
+
+
+def demo_send_eth_transaction(tx_handler: Transaction, wallet: Wallet, client: BaseClient):
+    """Demo: Actually send an ETH transaction (COSTS GAS)."""
+    print_header("DEMO 5: SEND ETH TRANSACTION (WRITE OPERATION)")
+    
+    print(f"\n{Colors.BOLD}⚠️  WARNING: THIS WILL SEND A REAL TRANSACTION! ⚠️{Colors.END}")
+    print(f"\n{Colors.BOLD}What This Tests:{Colors.END}")
+    print("  • Send ETH on Base Sepolia testnet")
+    print("  • Automatic gas estimation")
+    print("  • Nonce management")
+    print("  • Transaction monitoring")
+    print("  • COSTS TESTNET ETH (very small amount)")
+    
+    # Check balance first
+    balance = wallet.get_balance()
+    balance_eth = balance / 10**18
+    
+    if balance_eth < 0.001:
+        print_error("Insufficient balance for test transaction")
+        print(f"  Have: {balance_eth:.6f} ETH")
+        print(f"  Need: At least 0.001 ETH")
+        return None
+    
+    # Send to yourself (safest test)
+    recipient = wallet.address
+    amount = 0.0001  # Very small amount for testing
+    
+    print(f"\n{Colors.BOLD}Transaction Details:{Colors.END}")
+    print(f"  From:     {wallet.address[:20]}...")
+    print(f"  To:       {recipient[:20]}... (yourself)")
+    print(f"  Amount:   {amount} ETH")
+    print(f"  Network:  Base Sepolia")
+    print(f"  Balance:  {balance_eth:.6f} ETH")
+    
+    # Ask for confirmation
+    response = input(f"\n{Colors.YELLOW}Type 'yes' to send this transaction: {Colors.END}")
+    
+    if response.lower() != 'yes':
+        print_info("Transaction cancelled")
+        return None
+    
+    try:
+        print(f"\n{Colors.YELLOW}📤 Sending transaction...{Colors.END}")
         
-        # Display results
+        # Send with simulation and monitoring
+        start_time = time.time()
+        
+        tx_hash = tx_handler.send_eth(
+            to_address=recipient,
+            amount=amount,
+            unit='ether',
+            gas_strategy='standard',
+            simulate_first=True,  # Simulate before sending
+            wait_for_receipt=True  # Wait for confirmation
+        )
+        
+        send_time = time.time() - start_time
+        
+        # Transaction sent!
+        print_success("Transaction sent and confirmed!")
+        print(f"\n{Colors.BOLD}Results:{Colors.END}")
+        
+        # Handle both string and dict returns
+        if isinstance(tx_hash, dict):
+            tx_hash_str = tx_hash['transactionHash'].hex() if hasattr(tx_hash['transactionHash'], 'hex') else tx_hash['transactionHash']
+            print(f"  TX Hash:  {tx_hash_str[:20]}...")
+            print(f"  Block:    {tx_hash['blockNumber']}")
+            print(f"  Gas Used: {tx_hash['gasUsed']:,}")
+            print(f"  Status:   {'✅ Success' if tx_hash['status'] == 1 else '❌ Failed'}")
+            
+            # Calculate actual cost
+            actual_cost = tx_hash['gasUsed'] * tx_hash['effectiveGasPrice']
+            print(f"  Cost:     {format_eth(actual_cost)}")
+        else:
+            tx_hash_str = tx_hash
+            print(f"  TX Hash:  {tx_hash_str[:20]}...")
+        
+        print(f"  Time:     {send_time:.2f}s")
+        
+        # Block explorer link
+        explorer = f"https://sepolia.basescan.org/tx/{tx_hash_str}"
+        print(f"\n{Colors.BOLD}View on Explorer:{Colors.END}")
+        print(f"  {explorer}")
+        
+        # Get new balance
+        new_balance = wallet.get_balance()
+        new_balance_eth = new_balance / 10**18
+        
+        print(f"\n{Colors.BOLD}Balance After:{Colors.END}")
+        print(f"  {new_balance_eth:.6f} ETH")
+        print(f"  Change: {Colors.RED}-{(balance_eth - new_balance_eth):.6f} ETH{Colors.END} (gas cost)")
+        
+        return tx_hash_str
+    
+    except Exception as e:
+        print_error(f"Transaction failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def demo_analyze_your_transaction(tx_handler: Transaction, tx_hash: str, wallet: Wallet):
+    """Demo: Analyze the transaction you just sent."""
+    print_header("DEMO 6: ANALYZE YOUR TRANSACTION")
+    
+    print(f"\n{Colors.BOLD}What This Tests:{Colors.END}")
+    print("  • Full transaction analysis")
+    print("  • Balance change tracking")
+    print("  • Transaction classification")
+    print("  • Cost breakdown")
+    
+    if not tx_hash:
+        print_info("No transaction to analyze")
+        return
+    
+    print(f"\n{Colors.BOLD}Analyzing: {tx_hash[:20]}...{Colors.END}")
+    
+    try:
+        # Get full details
+        details = tx_handler.get_full_transaction_details(tx_hash)
+        
         print(f"\n{Colors.BOLD}Transaction Summary:{Colors.END}")
-        print(f"  Hash:       {details['tx_hash'][:20]}...")
-        print(f"  From:       {details['from']}")
-        print(f"  To:         {details['to']}")
-        print(f"  ETH Value:  {details['eth_value_formatted']}")
-        print(f"  Status:     {Colors.GREEN}✓ Success{Colors.END}" if details['status'] else f"{Colors.RED}✗ Failed{Colors.END}")
-        print(f"  Gas Used:   {details['gas_used']:,}")
+        print(f"  From:     {details['from'][:20]}...")
+        print(f"  To:       {details['to'][:20]}...")
+        print(f"  ETH:      {details['eth_value_formatted']} ETH")
+        print(f"  Status:   {'✅ Success' if details['status'] == 'confirmed' else '❌ Failed'}")
+        print(f"  Gas Used: {details['gas_used']:,}")
         
-        if details['transfer_count'] > 0:
-            print(f"\n{Colors.BOLD}Token Transfers ({details['transfer_count']}):{Colors.END}\n")
-            
-            for i, transfer in enumerate(details['token_transfers'], 1):
-                print(f"{Colors.BOLD}Transfer #{i}:{Colors.END}")
-                print(f"  Token:    {transfer.get('symbol', 'Unknown')} ({transfer['token'][:10]}...)")
-                print(f"  From:     {transfer['from']}")
-                print(f"  To:       {transfer['to']}")
-                
-                if 'amount_formatted' in transfer:
-                    print(f"  Amount:   {transfer['amount_formatted']} {transfer.get('symbol', '')}")
-                else:
-                    print(f"  Amount:   {transfer['amount']} (raw)")
-                print()
-        else:
-            print(f"\n{Colors.INFO}No token transfers in this transaction{Colors.END}")
+        # Classify transaction
+        classification = tx_handler.classify_transaction(tx_hash)
         
-        print(f"{Colors.BOLD}Performance:{Colors.END}")
-        print(f"  Query Time: {query_time*1000:.2f}ms")
+        print(f"\n{Colors.BOLD}Classification:{Colors.END}")
+        print(f"  Type:       {classification['type']}")
+        print(f"  Complexity: {classification['complexity']}")
+        print(f"  ETH:        {'Yes' if classification['eth_involved'] else 'No'}")
+        print(f"  Tokens:     {len(classification['tokens_involved'])}")
         
-        print_success("Full details retrieved")
+        # Get balance changes
+        changes = tx_handler.get_balance_changes(tx_hash, wallet.address)
         
+        print(f"\n{Colors.BOLD}Your Balance Change:{Colors.END}")
+        print(f"  ETH: {Colors.RED}{changes['eth_change_formatted']:.6f} ETH{Colors.END} (includes gas)")
+        
+        # Get actual cost
+        cost = tx_handler.get_transaction_cost(tx_hash)
+        
+        print(f"\n{Colors.BOLD}Cost Breakdown:{Colors.END}")
+        print(f"  L2 Fee: {cost['l2_cost_eth']:.8f} ETH")
+        print(f"  L1 Fee: {cost['l1_cost_eth']:.8f} ETH")
+        print(f"  TOTAL:  {Colors.BOLD}{cost['total_cost_eth']:.8f} ETH{Colors.END}")
+        
+        print_success("Analysis complete")
+    
     except Exception as e:
-        print_error(f"Failed: {str(e)[:80]}...")
-
-
-def demo_balance_changes(tx_handler: Transaction, client: BaseClient):
-    """Demonstrate NEW balance change tracking."""
-    print_header("NEW: BALANCE CHANGE TRACKING")
-    
-    print(f"\n{Colors.BOLD}What This Does:{Colors.END}")
-    print("  • Calculates net balance changes for an address")
-    print("  • Tracks both ETH and token balance changes")
-    print("  • Accounts for gas costs")
-    print("  • Shows incoming vs outgoing transfers")
-    
-    token_tx = get_real_token_transfer(client)
-    
-    if not token_tx:
-        print_info("No recent token transfers found")
-        return
-    
-    try:
-        # Get transaction details first to find an address
-        tx = client.w3.eth.get_transaction(token_tx)
-        address = tx['from']  # Track balance changes for sender
-        
-        print(f"\n{Colors.YELLOW}Tracking balance changes for: {address}{Colors.END}")
-        print(f"Transaction: {token_tx[:20]}...")
-        
-        # Calculate balance changes
-        print(f"\n{Colors.BOLD}Calculating balance changes...{Colors.END}")
-        start_time = time.time()
-        
-        changes = tx_handler.get_balance_changes(
-            token_tx,
-            address,
-            check_current_balance=False  # Just show changes, don't check current
-        )
-        
-        calc_time = time.time() - start_time
-        
-        # Display ETH changes
-        print(f"\n{Colors.BOLD}💰 ETH Balance Change:{Colors.END}")
-        eth_change = changes['eth_change']
-        if eth_change < 0:
-            print(f"  Sent: {Colors.RED}{changes['eth_change_formatted']} ETH{Colors.END}")
-        elif eth_change > 0:
-            print(f"  Received: {Colors.GREEN}+{changes['eth_change_formatted']} ETH{Colors.END}")
-        else:
-            print(f"  No change (0 ETH)")
-        
-        # Display token changes
-        if changes['token_changes']:
-            print(f"\n{Colors.BOLD}🪙 Token Balance Changes:{Colors.END}\n")
-            
-            for token_addr, token_info in changes['token_changes'].items():
-                change = token_info['change']
-                symbol = token_info.get('symbol', 'Unknown')
-                
-                if change < 0:
-                    print(f"  {symbol}:")
-                    print(f"    Sent: {Colors.RED}{token_info['change_formatted']}{Colors.END}")
-                elif change > 0:
-                    print(f"  {symbol}:")
-                    print(f"    Received: {Colors.GREEN}+{token_info['change_formatted']}{Colors.END}")
-                print()
-        else:
-            print(f"\n{Colors.INFO}No token balance changes{Colors.END}")
-        
-        print(f"{Colors.BOLD}Performance:{Colors.END}")
-        print(f"  Calculation Time: {calc_time*1000:.2f}ms")
-        print(f"  RPC Calls:        {Colors.GREEN}0 (uses existing data){Colors.END}")
-        
-        print_success("Balance changes calculated")
-        
-    except Exception as e:
-        print_error(f"Failed: {str(e)[:80]}...")
-
-
-def demo_classify_transaction(tx_handler: Transaction, client: BaseClient):
-    """Demonstrate NEW transaction classification."""
-    print_header("NEW: TRANSACTION CLASSIFICATION")
-    
-    print(f"\n{Colors.BOLD}What This Does:{Colors.END}")
-    print("  • Automatically classifies transaction type")
-    print("  • Identifies participants and tokens involved")
-    print("  • Determines complexity level")
-    print("  • Perfect for transaction filtering and UI")
-    
-    print(f"\n{Colors.BOLD}Classification Types:{Colors.END}")
-    print("  • eth_transfer - Simple ETH transfer")
-    print("  • token_transfer - ERC-20 token movement")
-    print("  • swap - Token exchange")
-    print("  • contract_interaction - Complex contract call")
-    
-    # Try both ETH and token transfers
-    token_tx = get_real_token_transfer(client)
-    eth_tx = get_real_eth_transfer(client)
-    
-    transactions_to_classify = []
-    if token_tx:
-        transactions_to_classify.append(('Token Transfer', token_tx))
-    if eth_tx:
-        transactions_to_classify.append(('ETH Transfer', eth_tx))
-    
-    if not transactions_to_classify:
-        print_info("No recent transactions found")
-        return
-    
-    for tx_name, tx_hash in transactions_to_classify:
-        try:
-            print(f"\n{Colors.BOLD}Example: {tx_name}{Colors.END}")
-            print(f"Transaction: {tx_hash[:20]}...")
-            
-            # Classify
-            start_time = time.time()
-            classification = tx_handler.classify_transaction(tx_hash)
-            classify_time = time.time() - start_time
-            
-            print(f"\n{Colors.BOLD}Classification Results:{Colors.END}")
-            print(f"  Type:        {Colors.CYAN}{classification['type']}{Colors.END}")
-            print(f"  Complexity:  {classification['complexity']}")
-            print(f"  Participants: {len(classification['participants'])}")
-            
-            if classification['participants']:
-                for i, participant in enumerate(classification['participants'][:3], 1):
-                    print(f"    {i}. {participant}")
-            
-            if classification['tokens_involved']:
-                print(f"  Tokens:      {len(classification['tokens_involved'])}")
-                for token in classification['tokens_involved'][:3]:
-                    print(f"    • {token}")
-            
-            print(f"\n  Classification Time: {classify_time*1000:.2f}ms")
-            
-        except Exception as e:
-            print_error(f"Failed to classify: {str(e)[:60]}...")
-        
-        print()
-    
-    print_success("Classification complete")
-
-
-# ============================================================================
-# ORIGINAL DEMOS (Enhanced)
-# ============================================================================
-
-def demo_query_transaction(tx_handler: Transaction, tx_hash: str):
-    """Query transaction details."""
-    print_header("1. QUERY TRANSACTION DETAILS")
-    
-    try:
-        print(f"\nTransaction: {tx_hash[:20]}...")
-        
-        tx = tx_handler.get(tx_hash)
-        
-        print(f"\n{Colors.BOLD}Basic Information:{Colors.END}")
-        print(f"  From:   {tx['from']}")
-        print(f"  To:     {tx['to'] if tx['to'] else 'Contract Creation'}")
-        print(f"  Value:  {format_eth(tx['value'])}")
-        print(f"  Block:  {tx['blockNumber']:,}" if tx['blockNumber'] else "  Block:  Pending")
-        
-        print(f"\n{Colors.BOLD}Gas:{Colors.END}")
-        print(f"  Limit:  {tx['gas']:,}")
-        print(f"  Price:  {tx['gasPrice'] / 10**9:.2f} Gwei")
-        
-        print_success("Transaction retrieved")
-        return tx
-        
-    except Exception as e:
-        print_error(f"Failed: {str(e)[:80]}...")
-        return None
-
-
-def demo_get_receipt(tx_handler: Transaction, tx_hash: str):
-    """Get transaction receipt."""
-    print_header("2. GET TRANSACTION RECEIPT")
-    
-    try:
-        receipt = tx_handler.get_receipt(tx_hash)
-        
-        status_text = f"{Colors.GREEN}✅ Success{Colors.END}" if receipt['status'] == 1 else f"{Colors.RED}❌ Failed{Colors.END}"
-        
-        print(f"\n{Colors.BOLD}Receipt:{Colors.END}")
-        print(f"  Status:    {status_text}")
-        print(f"  Gas Used:  {receipt['gasUsed']:,}")
-        print(f"  Block:     {receipt['blockNumber']:,}")
-        print(f"  Events:    {len(receipt['logs'])}")
-        
-        cost = receipt['gasUsed'] * receipt['effectiveGasPrice']
-        print(f"  L2 Cost:   {format_eth(cost)}")
-        
-        print_success("Receipt retrieved")
-        return receipt
-        
-    except Exception as e:
-        print_error(f"Receipt unavailable: {str(e)[:80]}...")
-        return None
+        print_error(f"Analysis failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 # ============================================================================
@@ -442,116 +475,125 @@ def demo_get_receipt(tx_handler: Transaction, tx_hash: str):
 # ============================================================================
 
 def main():
-    """Main demo with NEW ERC-20 features."""
+    """Main demo flow."""
     print(Colors.BOLD + Colors.CYAN)
     print("="*70)
-    print("BASE PYTHON SDK - TRANSACTION DEMO".center(70))
-    print("Featuring NEW ERC-20 Decoding Capabilities!".center(70))
+    print("BASE PYTHON SDK - COMPLETE TRANSACTION TESTING".center(70))
+    print("Testing READ and WRITE Operations".center(70))
     print("="*70)
     print(Colors.END)
     
-    print("\n💡 This demo uses REAL Base mainnet transactions")
-    print("   Showcasing NEW zero-cost ERC-20 decoding features!\n")
+    # Load environment
+    load_dotenv()
+    
+    private_key = os.getenv('TESTNET_PRIVATE_KEY')
+    
+    if not private_key:
+        print_error("TESTNET_PRIVATE_KEY not found in .env")
+        print("\n💡 Run this first:")
+        print("   python tools/generate_test_wallet.py")
+        return
     
     try:
-        # Connect
-        print(f"{Colors.YELLOW}🔗 Connecting to Base Mainnet...{Colors.END}")
-        client = BaseClient()
-        print_success("Connected")
+        # Connect to Base Sepolia
+        print(f"\n{Colors.YELLOW}🔗 Connecting to Base Sepolia...{Colors.END}")
+        client = BaseClient(chain_id=84532)
         
-        print(f"  Chain ID: {client.get_chain_id()}")
-        print(f"  Block:    {client.get_block_number():,}")
+        chain_id = client.get_chain_id()
+        block_number = client.get_block_number()
         
-        # Initialize
-        tx_handler = Transaction(client)
-        print_success("Transaction handler ready")
+        print_success("Connected!")
+        print(f"  Chain ID: {chain_id}")
+        print(f"  Block:    {block_number:,}")
         
-        input(f"\n{Colors.BOLD}Press Enter to start demos...{Colors.END}")
+        # Load wallet
+        print(f"\n{Colors.YELLOW}👛 Loading your wallet...{Colors.END}")
+        wallet = Wallet.from_private_key(private_key, client=client)
+        
+        print_success("Wallet loaded!")
+        print(f"  Address: {wallet.address}")
+        
+        # Initialize transaction handler
+        tx_handler = Transaction(client, wallet)
         
         # ====================================================================
-        # NEW ERC-20 FEATURES
+        # CHECK WALLET
         # ====================================================================
         
-        # Demo 1: ERC-20 Transfer Decoding
+        has_balance = demo_check_wallet(wallet, client)
+        
+        if not has_balance:
+            print("\n" + "="*70)
+            print_error("Cannot proceed without testnet ETH")
+            print("="*70)
+            return
+        
+        input(f"\n{Colors.BOLD}Press Enter to start testing...{Colors.END}")
+        
+        # ====================================================================
+        # READ OPERATIONS (PUBLIC)
+        # ====================================================================
+        
+        demo_query_real_transaction(tx_handler, client)
+        input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.END}")
+        
         demo_decode_erc20_transfers(tx_handler, client)
         input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.END}")
         
-        # Demo 2: Full Transaction Details
-        demo_full_transaction_details(tx_handler, client)
-        input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.END}")
-        
-        # Demo 3: Balance Changes
-        demo_balance_changes(tx_handler, client)
-        input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.END}")
-        
-        # Demo 4: Transaction Classification
-        demo_classify_transaction(tx_handler, client)
-        input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.END}")
-        
         # ====================================================================
-        # ORIGINAL FEATURES (with real tx)
+        # WRITE OPERATIONS (YOUR WALLET)
         # ====================================================================
         
-        # Find a real transaction
-        print_header("ADDITIONAL FEATURES WITH REAL TRANSACTIONS")
-        print(f"\n{Colors.YELLOW}🔍 Finding recent transaction...{Colors.END}")
+        demo_estimate_costs(tx_handler, wallet, client)
+        input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.END}")
         
-        real_tx = get_real_token_transfer(client)
-        if not real_tx:
-            real_tx = get_real_eth_transfer(client)
+        demo_simulate_transaction(tx_handler, wallet, client)
+        input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.END}")
         
-        if real_tx:
-            print_success(f"Found: {real_tx[:20]}...")
-            
-            # Demo basic operations
-            demo_query_transaction(tx_handler, real_tx)
-            input(f"\n{Colors.BOLD}Press Enter to continue...{Colors.END}")
-            
-            demo_get_receipt(tx_handler, real_tx)
-        else:
-            print_info("No recent transactions found for additional demos")
+        # ACTUAL TRANSACTION (asks for confirmation)
+        tx_hash = demo_send_eth_transaction(tx_handler, wallet, client)
+        
+        if tx_hash:
+            input(f"\n{Colors.BOLD}Press Enter to analyze your transaction...{Colors.END}")
+            demo_analyze_your_transaction(tx_handler, tx_hash, wallet)
         
         # ====================================================================
         # COMPLETION
         # ====================================================================
+        
         print("\n" + Colors.BOLD + "="*70 + Colors.END)
-        print(Colors.GREEN + Colors.BOLD + "✅ ALL DEMOS COMPLETED!".center(70) + Colors.END)
+        print(Colors.GREEN + Colors.BOLD + "✅ ALL TESTS COMPLETED!".center(70) + Colors.END)
         print(Colors.BOLD + "="*70 + Colors.END)
         
-        print("\n" + Colors.BOLD + "🎓 What You've Seen:" + Colors.END)
-        print("  ✅ ERC-20 transfer decoding (ZERO RPC cost)")
-        print("  ✅ Full transaction details with token metadata")
-        print("  ✅ Balance change tracking")
-        print("  ✅ Transaction classification")
-        print("  ✅ Real transaction analysis")
-        print("  ✅ Receipt and cost breakdown")
-        
-        print("\n" + Colors.BOLD + "🚀 Key Benefits:" + Colors.END)
-        print("  • ZERO additional RPC calls for token transfers")
-        print("  • Automatic token metadata enrichment")
-        print("  • Perfect for transaction monitoring")
-        print("  • Works with ANY ERC-20 token")
-        print("  • Human-readable formatted amounts")
-        print("  • Automatic transaction classification")
-        
-        print("\n" + Colors.BOLD + "💡 Use Cases:" + Colors.END)
-        print("  # Monitor wallet for token transfers")
-        print("  transfers = tx.decode_erc20_transfers(tx_hash)")
+        print("\n" + Colors.BOLD + "🎓 What Was Tested:" + Colors.END)
+        print("  ✅ Read Operations (public access)")
+        print("     • Query transactions")
+        print("     • Decode ERC-20 transfers (zero cost)")
+        print("     • Transaction analysis")
         print("  ")
-        print("  # Get human-readable transaction summary")
-        print("  details = tx.get_full_transaction_details(tx_hash, include_token_metadata=True)")
-        print("  ")
-        print("  # Track balance changes for accounting")
-        print("  changes = tx.get_balance_changes(tx_hash, wallet_address)")
-        print("  ")
-        print("  # Filter transactions by type")
-        print("  classification = tx.classify_transaction(tx_hash)")
-        print("  if classification['type'] == 'token_transfer':")
-        print("      # Handle token transfer")
+        print("  ✅ Write Operations (your wallet)")
+        print("     • Cost estimation")
+        print("     • Transaction simulation")
+        print("     • Send ETH transaction")
+        print("     • Balance tracking")
+        print("     • Complete analysis")
         
-        print("\n" + Colors.BOLD + "📚 Documentation:" + Colors.END)
-        print("  See transactions.py for full API reference")
-        print("  All methods include comprehensive docstrings")
+        print("\n" + Colors.BOLD + "📊 Your Wallet:" + Colors.END)
+        final_balance = wallet.get_balance()
+        final_balance_eth = final_balance / 10**18
+        print(f"  Address: {wallet.address}")
+        print(f"  Balance: {final_balance_eth:.6f} ETH")
+        print(f"  Nonce:   {wallet.get_nonce()}")
+        
+        explorer = f"https://sepolia.basescan.org/address/{wallet.address}"
+        print(f"\n{Colors.BOLD}📍 View Your Transactions:{Colors.END}")
+        print(f"  {explorer}")
+        
+        print("\n" + Colors.BOLD + "🚀 Next Steps:" + Colors.END)
+        print("  • Get more testnet ETH for more testing")
+        print("  • Try different gas strategies")
+        print("  • Test with ERC-20 tokens")
+        print("  • Integrate into your application")
         
     except KeyboardInterrupt:
         print("\n\n" + Colors.YELLOW + "⚠️  Interrupted" + Colors.END)
@@ -562,7 +604,7 @@ def main():
         traceback.print_exc()
     finally:
         print("\n" + Colors.BOLD + "="*70 + Colors.END)
-        print(Colors.CYAN + Colors.BOLD + "Thank you for trying Base Python SDK!".center(70) + Colors.END)
+        print(Colors.CYAN + Colors.BOLD + "Thank you for testing Base Python SDK!".center(70) + Colors.END)
         print(Colors.BOLD + "="*70 + Colors.END)
 
 

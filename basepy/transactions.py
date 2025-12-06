@@ -1431,8 +1431,8 @@ class Transaction:
                     
                     # Send to network
                     tx_hash = self.client.w3.eth.send_raw_transaction(
-                        signed_tx.rawTransaction
-                    )
+                    signed_tx.raw_transaction  # ✅ Change to this!
+                )
                     tx_hash_hex = self.client.w3.to_hex(tx_hash)
                     
                     logger.info(
@@ -1595,8 +1595,8 @@ class Transaction:
                     
                     # Send to network
                     tx_hash = self.client.w3.eth.send_raw_transaction(
-                        signed_tx.rawTransaction
-                    )
+                    signed_tx.raw_transaction  # ✅ Change to this!
+                )
                     tx_hash_hex = self.client.w3.to_hex(tx_hash)
                     
                     logger.info(
@@ -1721,8 +1721,8 @@ class Transaction:
                     
                     # Send to network
                     tx_hash = self.client.w3.eth.send_raw_transaction(
-                        signed_tx.rawTransaction
-                    )
+                    signed_tx.raw_transaction  # ✅ Change to this!
+                )
                     tx_hash_hex = self.client.w3.to_hex(tx_hash)
                     
                     logger.info(f"Sent raw transaction: {tx_hash_hex} (nonce: {tx['nonce']})")
