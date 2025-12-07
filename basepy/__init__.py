@@ -176,7 +176,7 @@ from .abis import (
 # VERSION & METADATA
 # ============================================================================
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __author__ = "BasePy Team"
 __license__ = "MIT"
 
