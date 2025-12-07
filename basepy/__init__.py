@@ -77,6 +77,26 @@ from .transactions import Transaction
 
 
 # ============================================================================
+# CONTRACT HELPERS (NEW - Added for ERC20Contract support)
+# ============================================================================
+
+try:
+    from .contracts import ERC20Contract
+    _has_erc20_contract = True
+except ImportError:
+    # If contracts.py doesn't exist, provide helpful error message
+    _has_erc20_contract = False
+    
+    class ERC20Contract:
+        """Placeholder for ERC20Contract when contracts.py is missing."""
+        def __init__(self, *args, **kwargs):
+            raise ImportError(
+                "ERC20Contract requires 'basepy/contracts.py' file. "
+                "Please create this file or download it from the repository."
+            )
+
+
+# ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
 
@@ -192,6 +212,7 @@ __all__ = [
     "BaseClient",
     "Wallet",
     "Transaction",
+    "ERC20Contract",  # ADDED - Now exported
     
     # ========================================================================
     # BASE UTILITIES
@@ -299,3 +320,46 @@ def enable_logging(level=logging.INFO):
     logging.getLogger('basepy.client').setLevel(level)
     logging.getLogger('basepy.transactions').setLevel(level)
     logging.getLogger('basepy.wallet').setLevel(level)
+
+
+# ============================================================================
+# MODULE STATUS CHECK
+# ============================================================================
+
+def check_installation():
+    """
+    Check BasePy SDK installation and report any issues.
+    
+    Example:
+        >>> import basepy
+        >>> basepy.check_installation()
+    """
+    print(f"BasePy SDK v{__version__}")
+    print("=" * 50)
+    
+    # Check core modules
+    modules = {
+        'BaseClient': BaseClient,
+        'Wallet': Wallet,
+        'Transaction': Transaction,
+        'ERC20Contract': ERC20Contract if _has_erc20_contract else None,
+    }
+    
+    print("\nCore Modules:")
+    for name, module in modules.items():
+        if module is not None:
+            status = "✅" if _has_erc20_contract or name != 'ERC20Contract' else "⚠️"
+            print(f"  {status} {name}")
+        else:
+            print(f"  ❌ {name} - Missing")
+    
+    # Check optional features
+    print("\nOptional Features:")
+    print(f"  {'✅' if _has_erc20_contract else '❌'} ERC20Contract helper")
+    
+    if not _has_erc20_contract:
+        print("\n⚠️  Warning: contracts.py is missing.")
+        print("   ERC20Contract functionality will not be available.")
+        print("   Please add contracts.py to enable this feature.")
+    
+    print("\n" + "=" * 50)

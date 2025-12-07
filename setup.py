@@ -106,9 +106,9 @@ setup(
     # AUTHOR & CONTACT
     # ========================================================================
     author="BasePy Team",
-    author_email="ba8516127@gmail.com",  # TODO: Update with real email
+    author_email="ba8516127@gmail.com",
     maintainer="BasePy Team",
-    maintainer_email="ba8616127@gmail.com",
+    maintainer_email="ba8516127@gmail.com",
     
     # ========================================================================
     # DESCRIPTION
@@ -120,7 +120,7 @@ setup(
     # ========================================================================
     # URLS
     # ========================================================================
-    url="https://github.com/basepy/basepy-sdk",  # TODO: Update with real URL
+    url="https://github.com/basepy/basepy-sdk",
     project_urls={
         "Homepage": "https://basepy.dev",
         "Documentation": "https://docs.basepy.dev",
@@ -159,8 +159,8 @@ setup(
         "Topic :: System :: Distributed Computing",
         "Topic :: Office/Business :: Financial",
         
-        # REMOVE THIS:
-        # "License :: OSI Approved :: MIT License",
+        # License (FIXED - uncommented)
+        "License :: OSI Approved :: MIT License",
         
         # Python versions
         "Programming Language :: Python :: 3",
@@ -258,8 +258,10 @@ setup(
         ],
     },
     
-    
-
+    # ========================================================================
+    # LICENSE
+    # ========================================================================
+    license="MIT",
     
     # ========================================================================
     # PACKAGE DATA
