@@ -106,9 +106,9 @@ setup(
     # AUTHOR & CONTACT
     # ========================================================================
     author="BasePy Team",
-    author_email="contact@basepy.dev",  # TODO: Update with real email
+    author_email="ba8516127@gmail.com",  # TODO: Update with real email
     maintainer="BasePy Team",
-    maintainer_email="contact@basepy.dev",
+    maintainer_email="ba8616127@gmail.com",
     
     # ========================================================================
     # DESCRIPTION
@@ -258,10 +258,8 @@ setup(
         ],
     },
     
-    # ========================================================================
-    # LICENSE
-    # ========================================================================
-    license="MIT",
+    
+
     
     # ========================================================================
     # PACKAGE DATA
