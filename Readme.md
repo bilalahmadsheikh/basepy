@@ -1,55 +1,80 @@
-🔵 BasePy SDK - Production-Ready Python SDK for Base Blockchain
-The most efficient and reliable way to build on Base (Ethereum Layer 2)
-Show Image
-Show Image
-Show Image
-Show Image
+# 🔵 BasePy SDK - Production-Ready Python SDK for Base Blockchain
 
-🚀 80% fewer RPC calls - Proven in production
-💰 Zero-cost ERC-20 decoding - Extract all token transfers FREE
-🛡️ Battle-tested resilience - Circuit breaker, auto-retry, rate limiting
-⚡ Production-grade - Thread-safe, cached, monitored
+**The most efficient and reliable way to build on Base (Ethereum Layer 2)**
 
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Production Ready](https://img.shields.io/badge/Production-Ready-success)](https://github.com/yourusername/basepy-sdk)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-🎯 Why BasePy?
-The Problem with Web3.py
+> 🚀 **80% fewer RPC calls** - Proven in production  
+> 💰 **Zero-cost ERC-20 decoding** - Extract all token transfers FREE  
+> 🛡️ **Battle-tested resilience** - Circuit breaker, auto-retry, rate limiting  
+> ⚡ **Production-grade** - Thread-safe, cached, monitored
+
+---
+
+## 🎯 Why BasePy?
+
+### The Problem with Web3.py
+
 When building production applications on Base, raw Web3.py has limitations:
-❌ Repetitive boilerplate - Every token balance needs 3+ RPC calls
-❌ No retry logic - Network errors crash your app
-❌ No rate limiting - Get blocked by RPC providers
-❌ Manual optimization - You implement caching yourself
-❌ Base L2 complexity - Manual L1+L2 fee calculations
-The BasePy Solution
-✅ Smart batching - Get entire portfolio in 2 RPC calls (vs 10+)
-✅ Automatic retry - Exponential backoff with circuit breaker
-✅ Built-in rate limiting - Never get blocked
-✅ Intelligent caching - 500x faster repeated queries
-✅ Base L2 native - L1+L2 fees calculated automatically
-✅ Zero-cost features - ERC-20 decoding from existing data
 
-🏆 Performance Comparison
+❌ **Repetitive boilerplate** - Every token balance needs 3+ RPC calls  
+❌ **No retry logic** - Network errors crash your app  
+❌ **No rate limiting** - Get blocked by RPC providers  
+❌ **Manual optimization** - You implement caching yourself  
+❌ **Base L2 complexity** - Manual L1+L2 fee calculations  
+
+### The BasePy Solution
+
+✅ **Smart batching** - Get entire portfolio in 2 RPC calls (vs 10+)  
+✅ **Automatic retry** - Exponential backoff with circuit breaker  
+✅ **Built-in rate limiting** - Never get blocked  
+✅ **Intelligent caching** - 500x faster repeated queries  
+✅ **Base L2 native** - L1+L2 fees calculated automatically  
+✅ **Zero-cost features** - ERC-20 decoding from existing data  
+
+---
+
+## 🏆 Performance Comparison
+
 Real-world performance (Base Mainnet, December 2024):
-TaskBasePy SDKWeb3.pyImprovementPortfolio (ETH + 3 tokens)2 RPC calls, 1.66s10+ RPC calls80% fewer calls ✅Decode ERC-20 transfers0 additional RPC calls1+ RPC calls per token100% free ✅Token metadata (cached)<1ms response300-500ms500x faster ✅Multicall (4 operations)1 RPC call4 sequential calls75% reduction ✅
-Real Cost Impact:
+
+| Task | BasePy SDK | Web3.py | Improvement |
+|------|------------|---------|-------------|
+| **Portfolio (ETH + 3 tokens)** | 2 RPC calls, 1.66s | 10+ RPC calls | **80% fewer calls** ✅ |
+| **Decode ERC-20 transfers** | 0 additional RPC calls | 1+ RPC calls per token | **100% free** ✅ |
+| **Token metadata (cached)** | <1ms response | 300-500ms | **500x faster** ✅ |
+| **Multicall (4 operations)** | 1 RPC call | 4 sequential calls | **75% reduction** ✅ |
+
+**Real Cost Impact:**  
 For 1M portfolio checks at typical RPC pricing:
+- Web3.py: ~$100 (10 calls × $0.01/1000)
+- BasePy: ~$20 (2 calls × $0.01/1000)
+- **You save: $80 per million requests (80% reduction)** 💰
 
-Web3.py: ~$100 (10 calls × $0.01/1000)
-BasePy: ~$20 (2 calls × $0.01/1000)
-You save: $80 per million requests (80% reduction) 💰
+---
 
+## 📦 Installation
 
-📦 Installation
-bashpip install basepy-sdk
-Requirements:
+```bash
+pip install basepy-sdk
+```
 
-Python 3.8+
-web3.py >= 6.0.0
-eth-account >= 0.9.0
+**Requirements:**
+- Python 3.8+
+- web3.py >= 6.0.0
+- eth-account >= 0.9.0
 
+---
 
-🚀 Quick Start
-30 Seconds to Your First Request
-pythonfrom basepy import BaseClient
+## 🚀 Quick Start
+
+### 30 Seconds to Your First Request
+
+```python
+from basepy import BaseClient
 
 # Connect to Base Mainnet (or Sepolia testnet)
 client = BaseClient()  # Mainnet
@@ -74,12 +99,20 @@ ETH: 1.234567
 Tokens with balance:
   USDC  :  1000.500000
   DAI   :   250.000000
-RPC calls: 2 (vs 10+ with Web3.py) 🎉
+```
 
-💎 Core Features
-1. 🪙 Smart Portfolio Tracking
+**RPC calls:** 2 (vs 10+ with Web3.py) 🎉
+
+---
+
+## 💎 Core Features
+
+### 1. 🪙 Smart Portfolio Tracking
+
 Get ETH + all token balances with minimal RPC calls:
-pythonfrom basepy import BaseClient
+
+```python
+from basepy import BaseClient
 
 client = BaseClient()
 
@@ -99,11 +132,18 @@ portfolio = client.get_portfolio_balance(
 
 print(f"Total assets: {portfolio['total_assets']}")
 print(f"Tokens with balance: {portfolio['non_zero_tokens']}")
-Cost: ~2 RPC calls (regardless of token count!) ⚡
+```
 
-2. 📊 Zero-Cost Transaction Analysis
+**Cost:** ~2 RPC calls (regardless of token count!) ⚡
+
+---
+
+### 2. 📊 Zero-Cost Transaction Analysis
+
 Extract all ERC-20 transfers without additional RPC calls:
-pythonfrom basepy import BaseClient, Transaction
+
+```python
+from basepy import BaseClient, Transaction
 
 client = BaseClient()
 tx = Transaction(client)
@@ -120,8 +160,12 @@ print(f"Token transfers: {details['transfer_count']}")
 
 for transfer in details['token_transfers']:
     print(f"  {transfer['symbol']}: {transfer['amount_formatted']}")
-Advanced Analysis:
-python# Decode ALL ERC-20 transfers (zero cost!)
+```
+
+**Advanced Analysis:**
+
+```python
+# Decode ALL ERC-20 transfers (zero cost!)
 transfers = tx.decode_erc20_transfers("0x123...")
 
 # Calculate balance changes for an address
@@ -134,11 +178,18 @@ for token, info in changes['token_changes'].items():
 classification = tx.classify_transaction("0x123...")
 print(f"Type: {classification['type']}")  # 'swap', 'transfer', etc.
 print(f"Complexity: {classification['complexity']}")
-Cost: FREE - uses existing receipt data! 🎉
+```
 
-3. 💸 Send Transactions (Wallet Required)
+**Cost:** FREE - uses existing receipt data! 🎉
+
+---
+
+### 3. 💸 Send Transactions (Wallet Required)
+
 Simple, production-ready transaction sending:
-pythonfrom basepy import BaseClient, Wallet, Transaction
+
+```python
+from basepy import BaseClient, Wallet, Transaction
 
 # Initialize with wallet
 client = BaseClient()
@@ -165,18 +216,23 @@ tx_hash = tx.send_erc20(
     abi=ERC20_ABI,
     gas_strategy='standard'
 )
-Features:
+```
 
-✅ Automatic gas estimation with buffer
-✅ Nonce management with collision detection
-✅ Transaction simulation before sending
-✅ Automatic retry with exponential backoff
-✅ Balance validation
+**Features:**
+- ✅ Automatic gas estimation with buffer
+- ✅ Nonce management with collision detection
+- ✅ Transaction simulation before sending
+- ✅ Automatic retry with exponential backoff
+- ✅ Balance validation
 
+---
 
-4. ⚡ Batch & Multicall Operations
+### 4. ⚡ Batch & Multicall Operations
+
 Execute multiple operations efficiently:
-python# Batch get balances
+
+```python
+# Batch get balances
 addresses = ["0xAddr1...", "0xAddr2...", "0xAddr3..."]
 balances = client.batch_get_balances(addresses)
 
@@ -192,11 +248,18 @@ calls = [
 ]
 results = client.multicall(calls)
 print(results)  # ['USD Coin', 'USDC', 6, 1234567890...]
-Cost: 1 RPC call (vs 4 sequential calls) 🚀
+```
 
-5. ⛽ Base L2 Fee Calculation
+**Cost:** 1 RPC call (vs 4 sequential calls) 🚀
+
+---
+
+### 5. ⛽ Base L2 Fee Calculation
+
 Get complete transaction cost breakdown:
-python# Estimate total cost (L1 + L2)
+
+```python
+# Estimate total cost (L1 + L2)
 cost = client.estimate_total_fee({
     'from': wallet.address,
     'to': recipient,
@@ -215,10 +278,16 @@ affordable = wallet.can_afford_transaction(
     buffer_percent=10
 )
 print(f"Can afford: {affordable}")
+```
 
-6. 🛡️ Production-Ready Resilience
+---
+
+### 6. 🛡️ Production-Ready Resilience
+
 Built-in reliability features (no configuration needed):
-pythonfrom basepy import BaseClient, Config
+
+```python
+from basepy import BaseClient, Config
 
 # Advanced configuration (optional)
 config = Config()
@@ -239,19 +308,23 @@ print(f"Avg latency: {stats['avg_latencies']}")
 health = client.health_check()
 print(f"Status: {health['status']}")
 print(f"Block number: {health['block_number']}")
-Automatic Features:
+```
 
-✅ Exponential backoff retry
-✅ Multiple RPC endpoint failover
-✅ Token bucket rate limiting
-✅ Circuit breaker pattern
-✅ Intelligent TTL caching
-✅ Thread-safe operations
-✅ Performance monitoring
+**Automatic Features:**
+- ✅ Exponential backoff retry
+- ✅ Multiple RPC endpoint failover
+- ✅ Token bucket rate limiting
+- ✅ Circuit breaker pattern
+- ✅ Intelligent TTL caching
+- ✅ Thread-safe operations
+- ✅ Performance monitoring
 
+---
 
-7. 👛 Complete Wallet Management
-pythonfrom basepy import BaseClient, Wallet
+### 7. 👛 Complete Wallet Management
+
+```python
+from basepy import BaseClient, Wallet
 
 client = BaseClient()
 
@@ -292,13 +365,37 @@ signature = wallet.sign_message("Hello, Base!")
 # Sign typed data (EIP-712)
 typed_data = {...}
 signature = wallet.sign_typed_data(typed_data)
+```
 
-🆚 BasePy vs Web3.py
-Feature Comparison
-FeatureBasePyWeb3.pyWinnerPortfolio balanceget_portfolio_balance() (2 calls)Manual loops (10+ calls)BasePy (80% fewer)ERC-20 decodingdecode_erc20_transfers() (0 calls)Manual parsing (1+ calls/token)BasePy (100% free)MulticallNative multicall() (1 call)Sequential (N calls)BasePy (N→1)Retry logic✅ Automatic exponential backoff❌ Manual implementationBasePyRate limiting✅ Token bucket built-in❌ Not includedBasePyCircuit breaker✅ Automatic failover❌ Not availableBasePyCaching✅ Intelligent TTL (500x speedup)❌ Manual implementationBasePyRPC failover✅ Multi-endpoint auto-switch❌ Manual switchingBasePyThread safety✅ Fully thread-safe⚠️ PartialBasePyBase L2 fees✅ Native L1+L2 calculation❌ Manual calculationBasePyWallet management✅ Complete (create, import, export, sign)⚠️ Basic signing onlyBasePyTransaction mgmt✅ Nonce collision handling, simulation⚠️ BasicBasePyMonitoring✅ Built-in metrics & health checks❌ Not includedBasePyProduction ready✅ Battle-tested⚠️ Requires hardeningBasePy
-Code Comparison
-Get portfolio balance:
-python# ❌ Web3.py - Verbose, 10+ RPC calls
+---
+
+## 🆚 BasePy vs Web3.py
+
+### Feature Comparison
+
+| Feature | BasePy | Web3.py | Winner |
+|---------|--------|---------|--------|
+| **Portfolio balance** | `get_portfolio_balance()` (2 calls) | Manual loops (10+ calls) | **BasePy (80% fewer)** |
+| **ERC-20 decoding** | `decode_erc20_transfers()` (0 calls) | Manual parsing (1+ calls/token) | **BasePy (100% free)** |
+| **Multicall** | Native `multicall()` (1 call) | Sequential (N calls) | **BasePy (N→1)** |
+| **Retry logic** | ✅ Automatic exponential backoff | ❌ Manual implementation | **BasePy** |
+| **Rate limiting** | ✅ Token bucket built-in | ❌ Not included | **BasePy** |
+| **Circuit breaker** | ✅ Automatic failover | ❌ Not available | **BasePy** |
+| **Caching** | ✅ Intelligent TTL (500x speedup) | ❌ Manual implementation | **BasePy** |
+| **RPC failover** | ✅ Multi-endpoint auto-switch | ❌ Manual switching | **BasePy** |
+| **Thread safety** | ✅ Fully thread-safe | ⚠️ Partial | **BasePy** |
+| **Base L2 fees** | ✅ Native L1+L2 calculation | ❌ Manual calculation | **BasePy** |
+| **Wallet management** | ✅ Complete (create, import, export, sign) | ⚠️ Basic signing only | **BasePy** |
+| **Transaction mgmt** | ✅ Nonce collision handling, simulation | ⚠️ Basic | **BasePy** |
+| **Monitoring** | ✅ Built-in metrics & health checks | ❌ Not included | **BasePy** |
+| **Production ready** | ✅ Battle-tested | ⚠️ Requires hardening | **BasePy** |
+
+### Code Comparison
+
+**Get portfolio balance:**
+
+```python
+# ❌ Web3.py - Verbose, 10+ RPC calls
 from web3 import Web3
 
 w3 = Web3(Web3.HTTPProvider(rpc_url))
@@ -319,8 +416,12 @@ from basepy import BaseClient
 client = BaseClient()
 portfolio = client.get_portfolio_balance(address, [usdc, dai, weth])
 # Total: 2 calls (1 for ETH, 1 multicall for all tokens)
-Decode token transfers:
-python# ❌ Web3.py - Manual, error-prone
+```
+
+**Decode token transfers:**
+
+```python
+# ❌ Web3.py - Manual, error-prone
 receipt = w3.eth.get_transaction_receipt(tx_hash)
 transfers = []
 for log in receipt['logs']:
@@ -336,10 +437,16 @@ from basepy import Transaction
 
 tx = Transaction(client)
 transfers = tx.decode_erc20_transfers(tx_hash)  # Done!
+```
 
-📚 Complete Examples
-Example 1: DeFi Portfolio Tracker
-pythonfrom basepy import BaseClient
+---
+
+## 📚 Complete Examples
+
+### Example 1: DeFi Portfolio Tracker
+
+```python
+from basepy import BaseClient
 
 def track_portfolio(wallet_address):
     client = BaseClient()
@@ -358,8 +465,12 @@ def track_portfolio(wallet_address):
     print(f"  RPC calls used: ~2 (vs {portfolio['total_assets'] * 3}+ with Web3.py)")
 
 track_portfolio("0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1")
-Example 2: Transaction Monitor
-pythonfrom basepy import BaseClient, Transaction
+```
+
+### Example 2: Transaction Monitor
+
+```python
+from basepy import BaseClient, Transaction
 
 def analyze_transaction(tx_hash):
     client = BaseClient()
@@ -393,8 +504,12 @@ def analyze_transaction(tx_hash):
     print(f"Complexity: {classification['complexity']}")
 
 analyze_transaction("0x...")
-Example 3: Production Bot with Monitoring
-pythonfrom basepy import BaseClient, Wallet, Transaction
+```
+
+### Example 3: Production Bot with Monitoring
+
+```python
+from basepy import BaseClient, Wallet, Transaction
 import time
 
 def trading_bot():
@@ -438,6 +553,7 @@ See [examples/](examples/) for more real-world code!
 ---
 
 ## 🏗️ Project Structure
+
 ```
 basepy-sdk/
 ├── basepy/
@@ -465,10 +581,16 @@ basepy-sdk/
 ├── setup.py                 # Package setup
 ├── pyproject.toml          # Modern Python config
 └── requirements.txt         # Dependencies
+```
 
-⚙️ Configuration
-Basic Configuration
-pythonfrom basepy import BaseClient, Config
+---
+
+## ⚙️ Configuration
+
+### Basic Configuration
+
+```python
+from basepy import BaseClient, Config
 
 # Use defaults (recommended)
 client = BaseClient()
@@ -481,23 +603,36 @@ config.RATE_LIMIT_REQUESTS = 100
 config.CIRCUIT_BREAKER_THRESHOLD = 5
 
 client = BaseClient(config=config)
-Environment-Based Config
-python# Development (verbose logging)
+```
+
+### Environment-Based Config
+
+```python
+# Development (verbose logging)
 client = BaseClient(environment='development')
 
 # Production (optimized)
 client = BaseClient(environment='production')
-Custom RPC Endpoints
-python# Use your own RPC endpoints
+```
+
+### Custom RPC Endpoints
+
+```python
+# Use your own RPC endpoints
 custom_rpcs = [
     "https://mainnet.base.org",
     "https://base.llamarpc.com",
     "https://base.meowrpc.com",
 ]
 client = BaseClient(chain_id=8453, rpc_urls=custom_rpcs)
+```
 
-🧪 Testing
-bash# Install with dev dependencies
+---
+
+## 🧪 Testing
+
+```bash
+# Install with dev dependencies
 pip install -e ".[dev]"
 
 # Run all tests
@@ -511,48 +646,64 @@ pytest tests/test_client.py -v
 
 # Run with benchmarks
 pytest tests/test_client.py --benchmark-only
+```
 
-📊 Performance Benchmarks
+---
+
+## 📊 Performance Benchmarks
+
 Tested on Base Mainnet (December 2024):
-OperationAvg TimeRPC Callsvs Web3.pyPortfolio (3 tokens)1.66s280% fewer callsDecode ERC-20 transfers<10ms0100% freeToken metadata (cached)<1ms0500x fasterMulticall (4 functions)~1s175% fewer callsHealth check~0.5s2N/A
-Benchmarks run with pytest-benchmark on Base Mainnet
 
-🛣️ Roadmap
-✅ Completed (v1.0)
+| Operation | Avg Time | RPC Calls | vs Web3.py |
+|-----------|----------|-----------|------------|
+| Portfolio (3 tokens) | 1.66s | 2 | 80% fewer calls |
+| Decode ERC-20 transfers | <10ms | 0 | 100% free |
+| Token metadata (cached) | <1ms | 0 | 500x faster |
+| Multicall (4 functions) | ~1s | 1 | 75% fewer calls |
+| Health check | ~0.5s | 2 | N/A |
 
- Core RPC operations
- ERC-20 token support
- Portfolio tracking (80% fewer calls)
- Zero-cost transaction decoding
- Complete wallet management
- Automatic retry & failover
- Rate limiting & circuit breaker
- Intelligent caching
- Base L2 fee calculation
- Thread-safe operations
- Performance monitoring
- Comprehensive testing
+*Benchmarks run with pytest-benchmark on Base Mainnet*
 
-🔜 Planned (v1.1-1.2)
+---
 
- ERC-721 (NFT) support
- ERC-1155 (Multi-token) support
- WebSocket support for events
- ENS resolution
- Price oracle integration
- GraphQL support
+## 🛣️ Roadmap
 
-🔮 Future (v2.0+)
+### ✅ Completed (v1.0)
+- [x] Core RPC operations
+- [x] ERC-20 token support
+- [x] Portfolio tracking (80% fewer calls)
+- [x] Zero-cost transaction decoding
+- [x] Complete wallet management
+- [x] Automatic retry & failover
+- [x] Rate limiting & circuit breaker
+- [x] Intelligent caching
+- [x] Base L2 fee calculation
+- [x] Thread-safe operations
+- [x] Performance monitoring
+- [x] Comprehensive testing
 
- Multi-chain support (Optimism, Arbitrum)
- Advanced DeFi integrations
- MEV protection
- Account abstraction (ERC-4337)
+### 🔜 Planned (v1.1-1.2)
+- [ ] ERC-721 (NFT) support
+- [ ] ERC-1155 (Multi-token) support
+- [ ] WebSocket support for events
+- [ ] ENS resolution
+- [ ] Price oracle integration
+- [ ] GraphQL support
 
+### 🔮 Future (v2.0+)
+- [ ] Multi-chain support (Optimism, Arbitrum)
+- [ ] Advanced DeFi integrations
+- [ ] MEV protection
+- [ ] Account abstraction (ERC-4337)
 
-🤝 Contributing
+---
+
+## 🤝 Contributing
+
 We welcome contributions! Here's how to get started:
-bash# Fork and clone
+
+```bash
+# Fork and clone
 git clone https://github.com/yourusername/basepy-sdk.git
 cd basepy-sdk
 
@@ -572,54 +723,74 @@ flake8 basepy/
 
 # Type check
 mypy basepy/
-Please see CONTRIBUTING.md for detailed guidelines.
+```
 
-📄 License
-MIT License - see LICENSE file for details.
-TL;DR: Free to use in commercial and personal projects. Just keep the license notice.
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
-🔗 Resources
+---
 
-GitHub: https://github.com/yourusername/basepy-sdk
-Documentation: Full API Reference
-Examples: examples/
-Base Docs: https://docs.base.org
-Issues: https://github.com/yourusername/basepy-sdk/issues
+## 📄 License
 
+MIT License - see [LICENSE](LICENSE) file for details.
 
-📞 Support
+**TL;DR:** Free to use in commercial and personal projects. Just keep the license notice.
+
+---
+
+## 🔗 Resources
+
+- **GitHub:** https://github.com/yourusername/basepy-sdk
+- **Documentation:** [Full API Reference](DOCUMENTATION.md)
+- **Examples:** [examples/](examples/)
+- **Base Docs:** https://docs.base.org
+- **Issues:** https://github.com/yourusername/basepy-sdk/issues
+
+---
+
+## 📞 Support
+
 Need help? We're here:
 
-GitHub Issues: Report bugs or request features
-Discord: Join our community
-Email: support@basepy.dev
-Twitter: @basepy_sdk
+- **GitHub Issues:** [Report bugs or request features](https://github.com/yourusername/basepy-sdk/issues)
+- **Discord:** [Join our community](https://discord.gg/yourserver)
+- **Email:** support@basepy.dev
+- **Twitter:** [@basepy_sdk](https://twitter.com/basepy_sdk)
 
+---
 
-🙏 Acknowledgments
-Built with ❤️ for the Base ecosystem:
+## 🙏 Acknowledgments
 
-Powered by Web3.py
-Inspired by the Ethereum and Base communities
-Thanks to all contributors and users
+Built with ❤️ for the [Base](https://base.org) ecosystem:
 
+- Powered by [Web3.py](https://github.com/ethereum/web3.py)
+- Inspired by the Ethereum and Base communities
+- Thanks to all contributors and users
 
-⭐ Star Us!
-If BasePy makes your development easier, please star the repository!
+---
+
+## ⭐ Star Us!
+
+If BasePy makes your development easier, **please star the repository!**
+
 It helps others discover the project and motivates us to keep improving.
-Show Image
 
-🎯 Quick Links
+[![GitHub stars](https://img.shields.io/github/stars/yourusername/basepy-sdk.svg?style=social&label=Star)](https://github.com/yourusername/basepy-sdk)
 
-📦 Installation
-🚀 Quick Start
-💎 Core Features
-📚 Examples
-🆚 vs Web3.py
-⚙️ Configuration
-🧪 Testing
-🤝 Contributing
+---
 
+## 🎯 Quick Links
 
-Built for developers who want to focus on building, not debugging RPC calls 🔵
-Making Base blockchain development 10x easier, 10x faster, and 80% cheaper
+- [📦 Installation](#-installation)
+- [🚀 Quick Start](#-quick-start)
+- [💎 Core Features](#-core-features)
+- [📚 Examples](#-complete-examples)
+- [🆚 vs Web3.py](#-basepy-vs-web3py)
+- [⚙️ Configuration](#%EF%B8%8F-configuration)
+- [🧪 Testing](#-testing)
+- [🤝 Contributing](#-contributing)
+
+---
+
+**Built for developers who want to focus on building, not debugging RPC calls** 🔵
+
+*Making Base blockchain development 10x easier, 10x faster, and 80% cheaper*
