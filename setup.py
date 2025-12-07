@@ -159,8 +159,8 @@ setup(
         "Topic :: System :: Distributed Computing",
         "Topic :: Office/Business :: Financial",
         
-        # License
-        "License :: OSI Approved :: MIT License",
+        # REMOVE THIS:
+        # "License :: OSI Approved :: MIT License",
         
         # Python versions
         "Programming Language :: Python :: 3",
