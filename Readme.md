@@ -1,4 +1,5 @@
 # 🔵 BasePy SDK - Production-Ready Python SDK for Base Blockchain
+https://pypi.org/project/basepy-sdk/
 
 **The most efficient and reliable way to build on Base (Ethereum Layer 2)**
 
@@ -751,10 +752,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 Need help? We're here:
 
-- **GitHub Issues:** [Report bugs or request features](https://github.com/yourusername/basepy-sdk/issues)
-- **Discord:** [Join our community](https://discord.gg/yourserver)
-- **Email:** support@basepy.dev
-- **Twitter:** [@basepy_sdk](https://twitter.com/basepy_sdk)
+- **GitHub Issues:** [Report bugs or request features]([https://github.com/yourusername/basepy-sdk/issues](https://github.com/bilalahmadsheikh/basepy))
+
 
 ---
 
