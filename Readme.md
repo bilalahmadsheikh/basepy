@@ -705,7 +705,7 @@ We welcome contributions! Here's how to get started:
 
 ```bash
 # Fork and clone
-git clone https://github.com/yourusername/basepy-sdk.git
+git clone https://github.com/bilalahmadsheikh/basepy-sdk.git
 cd basepy-sdk
 
 # Create virtual environment
@@ -752,7 +752,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 Need help? We're here:
 
-- **GitHub Issues:** [Report bugs or request features]([https://github.com/yourusername/basepy-sdk/issues](https://github.com/bilalahmadsheikh/basepy))
+- **GitHub Issues:** [Report bugs or request features]([https://github.com/bilalahmadsheikh/basepy-sdk/issues](https://github.com/bilalahmadsheikh/basepy))
 
 
 ---
@@ -773,7 +773,7 @@ If BasePy makes your development easier, **please star the repository!**
 
 It helps others discover the project and motivates us to keep improving.
 
-[![GitHub stars](https://img.shields.io/github/stars/yourusername/basepy-sdk.svg?style=social&label=Star)](https://github.com/yourusername/basepy-sdk)
+[![GitHub stars](https://img.shields.io/github/stars/bilalahmadsheikh/basepy-sdk.svg?style=social&label=Star)](https://github.com/bilalahmadsheikh/basepy-sdk)
 
 ---
 
